@@ -34,6 +34,16 @@ cv.namedWindow("output")
 delay_for_next_frame=False
 frame_number=0
 
+
+#G21
+#M211 S0
+#M92 Y5
+#M400
+#G91 ; Set all axes to relative
+#M106; light on
+#M107; light off
+#M84;disable stepper
+
 while True:
 
     cap, frame = videoCaptureObject.read()
@@ -93,7 +103,7 @@ while True:
     centre_box=[150,350,50,30]
     cv.rectangle(frame,(centre_box[0],centre_box[1]),(centre_box[0]+centre_box[2],centre_box[1]+centre_box[3]),(0,255,0),2)
 
-    reset_box=[150,100,50,70]
+    reset_box=[150,250,50,70]
     cv.rectangle(frame,(reset_box[0],reset_box[1]),(reset_box[0]+reset_box[2],reset_box[1]+reset_box[3]),(100,100,0),2)
 
     #Sort by area, largest first (hopefully our sproket - we should only have 1 full sprocket in view at any 1 time)
@@ -168,8 +178,8 @@ while True:
     #cv.imshow('canny_edges',canny_edges)
     cv.imshow('RawVideo',frame)
 
-    # 20ms delay
-    k=cv.waitKey(10) & 0xFF
+    # 2ms delay
+    k=cv.waitKey(2) & 0xFF
 
     if k==27:    # Esc key to stop
         break
