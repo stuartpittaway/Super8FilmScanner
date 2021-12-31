@@ -99,10 +99,11 @@ def ProcessImage(videoCaptureObject,centre_box):
 
     # Mask side of image to find the sprokets, crop out words on film like "KODAK LABS"
     # keep 30% of the right hand part of the picture
-    x=int(image_width*0.18)
+    x=int(image_width*0.15)
     cv.rectangle(mask, (130, 0), (x, image_height), 255, -1)
     # apply our mask
     masked = cv.bitwise_and(frame, frame, mask=mask)
+    cv.imshow("masked",masked)
 
     # Blur the image
     matrix = (17,7)
@@ -111,7 +112,8 @@ def ProcessImage(videoCaptureObject,centre_box):
 
     #cv.imwrite("NewFile_name.jpg",image_blur)
     #cv.imshow("Super8FilmScanner",image_blur)
-    _, thrash = cv.threshold(imgGry, 235 , 255, cv.THRESH_BINARY)
+    _, thrash = cv.threshold(imgGry, 200 , 255, cv.THRESH_BINARY)
+    cv.imshow("thrash",thrash)
 
     # find Canny Edges
     canny_edges = cv.Canny(thrash, 30, 200)
@@ -131,7 +133,7 @@ def ProcessImage(videoCaptureObject,centre_box):
         #Find area of detected shapes and filter on the larger ones
         area = cv.contourArea(contour)
 
-        if area>10000:
+        if area>8500:
             #(center(x, y), (width, height), angleofrotation) = cv.minAreaRect(contour)
             rect = cv.minAreaRect(contour)
             rotation = rect[2]
@@ -146,6 +148,8 @@ def ProcessImage(videoCaptureObject,centre_box):
 
             cv.drawContours(frame, [box], 0, colour, 2)
             return frame,centre
+        else:
+            print("Area is ",area)
     else:
         cv.putText(frame, "No contour", (0,50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
     
@@ -207,8 +211,8 @@ frame_number=0
 slow_step=True
 
 marlin_y=0.0
-nudge_feed_rate=300
-standard_feed_rate=2000
+nudge_feed_rate=320
+standard_feed_rate=5000
 
 # This is the trigger rectangle for the sproket identification
 # must be in the centre of the screen without cropping each frame
@@ -222,7 +226,7 @@ last_y_list=[]
 try:
     while True:
         # 5ms delay
-        k=cv.waitKey(5) & 0xFF
+        k=cv.waitKey(1) & 0xFF
 
         if k==27:    # Esc key to stop
             break
@@ -239,8 +243,8 @@ try:
         if centre==None:
             # We don't have a WHOLE sproket visible on the photo (may be partial ones)
             # Nudge forward until we find the sproket hole centre
-            #print("Advance until we find a sproket...")
-            marlin_y+=5.0
+            #print("Advance until we find a sproket...")            
+            marlin_y+=1.0
             MoveFilm(marlin,marlin_y,nudge_feed_rate)
             continue
 
@@ -248,7 +252,7 @@ try:
             # We have a complete sproket visible, but not in the centre of the frame...
             # Nudge forward until we find the sproket hole centre
             #print("Advance until sproket in centre frame")
-            marlin_y+=0.5
+            marlin_y+=0.4
             MoveFilm(marlin,marlin_y,nudge_feed_rate)
             continue
 
@@ -259,8 +263,8 @@ try:
         #We have just found our sproket
 
         #It might get stuck oin a loop here...
+        print("Found frame {0} at position {1}".format(frame_number, marlin_y))
         while True:
-            print("Found frame {0} at position {1}".format(frame_number, marlin_y))
             #Take a fresh photo now the motion has stopped
             freeze_frame,centre = ProcessImage(videoCaptureObject,centre_box)
             if centre==None:
