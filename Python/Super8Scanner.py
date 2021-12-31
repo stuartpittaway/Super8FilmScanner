@@ -6,6 +6,10 @@
 import numpy as np
 import cv2 as cv
 import os
+import serial
+from serial.serialwin32 import Serial
+import serial.tools.list_ports as port_list
+from datetime import datetime
 
 #print( cv.__version__ )
 
@@ -18,12 +22,87 @@ def pointInRect(point,rect):
             return True
     return False
 
+def MarlinWaitForReply(MarlinSerialPort: Serial, echoToPrint = True) -> bool:
+    tstart = datetime.now()
+
+    while True:
+        # Wait until there is data waiting in the serial buffer
+        if MarlinSerialPort.in_waiting > 0:
+            # Read data out of the buffer until a CR/NL is found
+            serialString = MarlinSerialPort.readline()
+
+            if echoToPrint:
+                if serialString.startswith(b"echo:"):
+                    # Print the contents of the serial data
+                    print("Marlin R:",serialString.decode("Ascii"))
+
+            if serialString==b"ok\n":
+                return True
+
+        else:
+            #Abort after X seconds of not receiving anything
+            duration = datetime.now()-tstart
+            if duration.total_seconds()>2:
+                return False
+
+
+def SendMarlinCmd(MarlinSerialPort: Serial, cmd:str) -> bool:
+    print("Sending GCODE",cmd)
+
+    if MarlinSerialPort.isOpen()==False:
+        raise Exception("Port closed")
+
+    MarlinSerialPort.write(cmd)
+    MarlinSerialPort.write(b'\n')
+    if MarlinWaitForReply(MarlinSerialPort)==False:
+        raise Exception("Bad GCODE command or not a valid reply from Marlin")
+    
+    return True
+
+
+def SendMultipleMarlinCmd(MarlinSerialPort: Serial, cmds:list) -> bool:
+    for cmd in cmds:
+        SendMarlinCmd(MarlinSerialPort,cmd)
+
+    return True
+
 
 path=os.path.join(os.getcwd(),"Capture")
 
 if not os.path.exists(path):
     os.makedirs(path)
 
+#ports = list(port_list.comports())
+#for p in ports:
+#    print (p)
+
+# Connect to MARLIN
+marlin = serial.Serial(
+    port="COM5", baudrate=250000, bytesize=8, timeout=5, stopbits=serial.STOPBITS_ONE, parity=serial.PARITY_NONE
+)
+
+# After initial connection Marlin sends loads of information which we ignore...
+MarlinWaitForReply(marlin,False)
+
+# Send setup commands...
+#M502 Hardcoded Default Settings Loaded
+#G21 - Millimeter Units
+#M211 - Software Endstops (disable)
+#G91 - Relative Positioning
+#M106 - Fan On (LED LIGHT)
+#G92 - Set Position
+SendMultipleMarlinCmd(marlin,[b"M502",b"G21",b"M211 S0",b"G91",b"M106",b"G92 X0 Y0 Z0"])
+
+# M92 - Set Axis Steps-per-unit
+# Steps per millimeter - 51.5 for 19mm rubber band wheel (lumpy and not circle!)
+SendMarlinCmd(marlin,b"M92 Y51.5")
+
+# Wait for movement to complete
+SendMarlinCmd(marlin,b"M400")
+
+
+
+# Open webcamera
 videoCaptureObject = cv.VideoCapture(1,cv.CAP_DSHOW)
 videoCaptureObject.set(cv.CAP_PROP_FRAME_WIDTH, 1280)
 videoCaptureObject.set(cv.CAP_PROP_FRAME_HEIGHT, 720)
@@ -34,18 +113,7 @@ cv.namedWindow("output")
 delay_for_next_frame=False
 frame_number=0
 
-
-#G21
-#M211 S0
-#M92 Y5
-#M400
-#G91 ; Set all axes to relative
-#M106; light on
-#M107; light off
-#M84;disable stepper
-
 while True:
-
     cap, frame = videoCaptureObject.read()
 
     if cap==False:
@@ -91,15 +159,6 @@ while True:
 
     contours , _ = cv.findContours(canny_edges, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE )
 
-    # Store x and y coordinates as column vectors
-    #xcoord = np.array([[459, 450]]).T
-    #ycoord = np.array([[467, 466]]).T
-    #    points = np.int0(points) 
-
-        # Check to see if any rectangle points are in our lists
-    #    if np.any(np.logical_and(xcoords == points[:,0], ycoords == points[:,1])):
-    #        continue
-
     centre_box=[150,350,50,30]
     cv.rectangle(frame,(centre_box[0],centre_box[1]),(centre_box[0]+centre_box[2],centre_box[1]+centre_box[3]),(0,255,0),2)
 
@@ -116,7 +175,6 @@ while True:
 
         #Find area of detected shapes and filter on the larger ones
         area = cv.contourArea(contour)
-        #print(area)
 
         if area>10000:
 
@@ -186,3 +244,7 @@ while True:
 
 videoCaptureObject.release()
 cv.destroyAllWindows()
+
+# M107 Light Off
+# M84 Steppers Off
+SendMultipleMarlinCmd(marlin,[b"M107",b"M84"])
