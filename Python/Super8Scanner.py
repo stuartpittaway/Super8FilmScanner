@@ -72,29 +72,21 @@ def SendMultipleMarlinCmd(MarlinSerialPort: Serial, cmds:list) -> bool:
     return True
 
 
-def ProcessImage(videoCaptureObject,centre_box):    
+def ProcessImage(videoCaptureObject,centre_box:list,video_width:int,video_height:int):
     cap, frame = videoCaptureObject.read()
 
     if cap==False:
         raise IOError("Failed to capture image")    
     
     # Capture of 1280x720 image is 1280 x 720 x 3/2 (1382400 bytes)
-
     #1280x720 16 bit 
     #ImgSz=1843200
     #1843200 Sample Size
-    #SubType YUY2
-    
-    #921600
-    print(frame.shape)
-    shape = (int(720 * 1.5), 1280)
+    #SubType YUY2    
+    shape = (int(video_height * 1.5), int(video_width))
     frame=frame.reshape(shape)
-    print(frame.shape)
-
-    frame=cv.cvtColor(frame,cv.COLOR_YUV2BGR_NV12)
-    
-    cv.imshow('im', frame)
-    cv.waitKey(0)
+    # Convert YUV2 into RGB for OpenCV to use
+    frame=cv.cvtColor(frame,cv.COLOR_YUV2BGR_NV12)    
 
     # Mirror horizontal - sproket is now on left of image
     frame = cv.flip(frame, 1)
@@ -104,52 +96,50 @@ def ProcessImage(videoCaptureObject,centre_box):
     image_height=frame.shape[:2][0]
 
     #Mask out any plastic gate on left/right/top/bottom of frame
-    main_mask = np.zeros(frame.shape[:2], dtype="uint8")
-    cv.rectangle(main_mask, (75, 0), (image_width-75, image_height), 255, -1)
-    frame = cv.bitwise_and(frame, frame, mask=main_mask)
+    gate_mask = np.zeros(frame.shape[:2], dtype="uint8")
+    cv.rectangle(gate_mask, (75, 0), (image_width-75, image_height), 255, -1)
+    frame = cv.bitwise_and(frame, frame, mask=gate_mask)
 
-    # a mask is the same size as our image, but has only two pixel
-    # values, 0 and 255 -- pixels with a value of 0 (background) are
-    # ignored in the original image while mask pixels with a value of
-    # 255 (foreground) are allowed to be kept
-    mask = np.zeros(frame.shape[:2], dtype="uint8")
 
-    # Mask side of image to find the sprokets, crop out words on film like "KODAK LABS"
-    # keep 30% of the right hand part of the picture
+    # Mask left side of image to find the sprokets, crop out words on film like "KODAK LABS"
+    # we are looking for a narrow vertical section of the sprokets, not including any film picture
+    # or the curved corners of the sproket hole.
+    sproket_mask = np.zeros(frame.shape[:2], dtype="uint8")
     x=int(image_width*0.15)
-    cv.rectangle(mask, (130, 0), (x, image_height), 255, -1)
-    # apply our mask
-    masked = cv.bitwise_and(frame, frame, mask=mask)
+    cv.rectangle(sproket_mask, (130, 0), (x, image_height), 255, -1)
+    masked = cv.bitwise_and(frame, frame, mask=sproket_mask)
     #cv.imshow("masked",masked)
 
-    # Blur the image
+    # Blur the image and convert to grayscale
     matrix = (17,7)
     frame_blur = cv.GaussianBlur(masked,matrix,0)
     imgGry = cv.cvtColor(frame_blur, cv.COLOR_BGR2GRAY)
 
-    #cv.imwrite("NewFile_name.jpg",image_blur)
-    #cv.imshow("Super8FilmScanner",image_blur)
+    # Threshold to only keep the sproket data visible (bright white now)
     _, thrash = cv.threshold(imgGry, 200 , 255, cv.THRESH_BINARY)
-    cv.imshow("thrash",thrash)
+    #cv.imshow("thrash",thrash)
 
     # find Canny Edges
     canny_edges = cv.Canny(thrash, 30, 200)
     #cv.imshow("canny_edges",canny_edges)
 
+    # Get contour of the sproket
     contours , _ = cv.findContours(canny_edges, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
 
+    # Draw the target centre box we are looking for (just for debug)
     cv.rectangle(frame,(centre_box[0],centre_box[1]),(centre_box[0]+centre_box[2],centre_box[1]+centre_box[3]),(0,255,0),2)
 
     #Sort by area, largest first (hopefully our sproket - we should only have 1 full sprocket in view at any 1 time)
     contours = sorted(contours, key=lambda x: cv.contourArea(x), reverse=True)
 
     if len(contours)>0:
-        #for contour in contours:
+        # Just take the first one...
         contour=contours[0]
 
         #Find area of detected shapes and filter on the larger ones
         area = cv.contourArea(contour)
 
+        # Sproket must be bigger than this to be okay...
         if area>8500:
             #(center(x, y), (width, height), angleofrotation) = cv.minAreaRect(contour)
             rect = cv.minAreaRect(contour)
@@ -160,18 +150,19 @@ def ProcessImage(videoCaptureObject,centre_box):
             centre = rect[0]
             colour=(0, 0, 255)
 
-            # Mark centre of sproket
+            # Mark centre of sproket with a circle
             cv.circle(frame,(int(centre[0]),int(centre[1])), 8, (0,100,100), -1)
 
+            # Draw the rectangle
             cv.drawContours(frame, [box], 0, colour, 2)
-            return frame,centre
-        else:
-            print("Area is ",area)
+            return frame, centre
+        else:            
+            #print("Area is ",area)
+            pass
     else:
         cv.putText(frame, "No contour", (0,50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
     
     return frame,None
-
 
 def MoveFilm(marlin:Serial,y:float,feed_rate:int):
     SendMarlinCmd(marlin,"G0 Y{0:.4f} F{1}".format(y, feed_rate))
@@ -224,28 +215,12 @@ def decode_fourcc(v):
     v = int(v)
     return "".join([chr((v >> 8 * i) & 0xFF) for i in range(4)])
 
-def main():
-    #print( cv.__version__ )
-
-    #https://github.com/opencv/opencv/issues/17687
-    #os.environ["OPENCV_VIDEOIO_MSMF_ENABLE_HW_TRANSFORMS"] = "0"
-
-    marlin = ConnectToMarlin()
-
-    # Image Output path - create if needed
-    path=os.path.join(os.getcwd(),"Capture")
-
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-
+def ConfigureCamera():
     # Open webcamera
     videoCaptureObject = cv.VideoCapture(1,cv.CAP_MSMF)
+
     if not (videoCaptureObject.isOpened()):
         raise Exception("Could not open video device")
-
-    #if videoCaptureObject.set(cv.CAP_PROP_BUFFERSIZE, 3)==False:
-    #    raise Exception("Unable to set video capture parameter")    
 
     if videoCaptureObject.set(cv.CAP_PROP_FRAME_WIDTH, 1280)==False:
         raise Exception("Unable to set video capture parameter")
@@ -260,193 +235,229 @@ def main():
     if decode_fourcc(videoCaptureObject.get(cv.CAP_PROP_FOURCC))!="NV12":
         raise Exception("Camera not in raw YUV4:2:0 format")
 
-    #print(videoCaptureObject.get(cv.CAP_PROP_FRAME_WIDTH))
-    #print(videoCaptureObject.get(cv.CAP_PROP_FRAME_HEIGHT))
-    #print(videoCaptureObject.get(cv.CAP_PROP_FPS))
+    video_width=videoCaptureObject.get(cv.CAP_PROP_FRAME_WIDTH)
+    video_height=videoCaptureObject.get(cv.CAP_PROP_FRAME_HEIGHT)
 
-    #cv.namedWindow("RawVideo")
-    #cv.namedWindow("output")
+    return videoCaptureObject, video_width, video_height
+
+def OutputFolder()-> str:
+    # Image Output path - create if needed
+    path=os.path.join(os.getcwd(),"Capture")
+
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    return path
+
+
+def StartupAlignment(marlin:Serial,videoCaptureObject,centre_box,video_width,video_height):
+    marlin_y=0
+
+    return_value=False
+
+    while True:
+        my_frame, centre = ProcessImage(videoCaptureObject,centre_box,video_width,video_height)
+
+        if centre==None:
+            cv.putText(my_frame, "Sproket not detected, press f to nudge forward, b for back, j to jump forward quickly, ESC to quit", (0,100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255,0), 2, cv.LINE_AA)
+        else:
+            cv.putText(my_frame, "Sproket detected, press SPACE to start scanning, ESC to quit", (0,100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255,255), 2, cv.LINE_AA)
+
+        cv.imshow('RawVideo',my_frame)
+
+        # Check keyboard
+        k=cv.waitKey(10) & 0xFF
+
+        if k==ord(' '):    # SPACE key to continue
+            return_value=True
+            break
+
+        if k==27:
+            return_value=False
+            break
+
+        if k==ord('f'):
+            marlin_y+=1
+            MoveFilm(marlin,marlin_y,500)
+
+        if k==ord('j'):
+            marlin_y+=100
+            MoveFilm(marlin,marlin_y,8000)
+
+        if k==ord('b'):
+            marlin_y-=1
+            MoveFilm(marlin,marlin_y,500)
+
+    return return_value
+
+
+def main():
+    #print( cv.__version__ )
+
+    path = OutputFolder()
+    marlin = ConnectToMarlin()
+    videoCaptureObject, video_width, video_height=ConfigureCamera()
 
     # Constants (sort of)
     NUDGE_FEED_RATE=320
     STANDARD_FEED_RATE=5000
 
-    frame_number=0
-    marlin_y=0.0
-
     # This is the trigger rectangle for the sproket identification
     # must be in the centre of the screen without cropping each frame of Super8
     # A frame is W1280 and H720 (based on input web camera)
-    centre_box=[150,342,50,38]
+    
+    centre_box=[130,0,50,40]
+    centre_box[1]=int(video_height/2-centre_box[3]/2)
 
-    frame_counter=0
-    frame_spacing=20
-    last_y_list=[]
+    if StartupAlignment(marlin,videoCaptureObject,centre_box,video_width,video_height)==True:
 
+        # Total number of images stored as a unique frame
+        frame_number=0
+        # Position on film reel (in marlin Y units)
+        marlin_y=0.0
+        # Total number of images taken
+        frame_counter=0
+        # Default space (in marlin Y units) between frames on the reel
+        frame_spacing=20
+        # List of positions (marlin y) where last frames were captured/found
+        last_y_list=[]
 
-    while True:
-        my_frame, centre = ProcessImage(videoCaptureObject,centre_box)
-
-        if centre==None:
-            cv.putText(my_frame, "Sproket not detected, press f to nudge forward, b for back, q to quit", (0,100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255,0), 2, cv.LINE_AA)
-        else:
-            cv.putText(my_frame, "Sproket detected, press SPACE to start scanning, q to quit", (0,100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255,255), 2, cv.LINE_AA)
-
-        cv.imshow('RawVideo',my_frame)
-
-        # 5ms delay
-        k=cv.waitKey(5) & 0xFF
-
-        if k==ord(' '):    # SPACE key to continue
-            break
-
-        if k==ord('q'):
-            return
-
-        if k==ord('f'):    # f key
-            marlin_y+=0.5
-            MoveFilm(marlin,marlin_y,NUDGE_FEED_RATE)
-
-        if k==ord('b'):    # b key
-            marlin_y-=0.5
-            MoveFilm(marlin,marlin_y,NUDGE_FEED_RATE)
-
-    return
-
-    try:
-        while True:
-            # 5ms delay
-            k=cv.waitKey(1) & 0xFF
-
-            if k==27:    # Esc key to stop
-                break
-
-            # Centre returns the middle of the sproket
-            # Frame is the picture (already pre-processed)
-            my_frame, centre = ProcessImage(videoCaptureObject,centre_box)
-            cv.putText(my_frame, "{:08d}".format(frame_counter), (0,100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255,255), 2, cv.LINE_AA)
-            frame_counter+=1
-
-            cv.imshow('RawVideo',my_frame)
-            cv.waitKey(1)
-
-            if centre==None:
-                # We don't have a WHOLE sproket visible on the photo (may be partial ones)
-                # Nudge forward until we find the sproket hole centre
-                #print("Advance until we find a sproket...")            
-                marlin_y+=1.0
-                MoveFilm(marlin,marlin_y,NUDGE_FEED_RATE)
-                continue
-
-            if pointInRect(centre,centre_box)==False:
-                # We have a complete sproket visible, but not in the centre of the frame...
-                # Nudge forward until we find the sproket hole centre
-                #print("Advance until sproket in centre frame")
-                marlin_y+=0.40
-                MoveFilm(marlin,marlin_y,NUDGE_FEED_RATE)
-                continue
-
-            #cv.waitKey(100)
-            #cv.imshow('thrash',thrash)
-            #cv.imshow('canny_edges',canny_edges)
-
-            #We have just found our sproket
-
-            #It might get stuck oin a loop here...
-            print("Found frame {0} at position {1}".format(frame_number, marlin_y))
+        #Reset Marlin to be zero (homed!!)
+        SendMarlinCmd(marlin,"G92 X0 Y0 Z0")
+        
+        try:
             while True:
-                #Take a fresh photo now the motion has stopped
-                freeze_frame,centre = ProcessImage(videoCaptureObject,centre_box)
-                if centre==None:
-                    print("Second photo didn't find sproket!")
-                    cv.imshow('output',freeze_frame)
-                else:
-                    #print("New centre",centre)
+                # Check keyboard
+                k=cv.waitKey(1) & 0xFF
+
+                if k==27:    # Esc key to stop
                     break
 
-            # Debug allow motion to stop
-            #cv.waitKey(5000)
+                # Centre returns the middle of the sproket
+                # Frame is the picture (already pre-processed)
+                my_frame, centre = ProcessImage(videoCaptureObject,centre_box,video_width,video_height)
+                cv.putText(my_frame, "{:08d}".format(frame_counter), (0,100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255,255), 2, cv.LINE_AA)
+                frame_counter+=1
 
-            #Double check the sproket is still in the correct place...
-            if pointInRect(centre,centre_box):
-                try:
-                    
-                    x=0
-                    #original height is 720 pixels, cut frame of super 8 down to 620 pixels height
-                    h=620
-                    y=int(centre[1])-int(h/2)
-                    #width 1280 pixels
-                    w=freeze_frame.shape[:2][1]
-                    #print("Freeze Image", freeze_frame.shape[:2])
-                    #print("Crop to x,y,w,h=",x,y,w,h)
-                    # Cut out the segment we want to keep - this is now positioned so the sproket
-                    # hole is always in the same location
-                    crop_img = freeze_frame[y:y+h,x:x+w].copy()
+                cv.imshow('RawVideo',my_frame)
+                cv.waitKey(1)
 
-                    #print("crop_img dims", crop_img.shape[:2])
+                if centre==None:
+                    # We don't have a WHOLE sproket visible on the photo (may be partial ones)
+                    # Nudge forward until we find the sproket hole centre
+                    #print("Advance until we find a sproket...")            
+                    marlin_y+=1.0
+                    MoveFilm(marlin,marlin_y,NUDGE_FEED_RATE)
+                    continue
 
-                    # Debug output, mark image with frame number
-                    frame_text="{:08d}".format(frame_number)
-                    cv.putText(crop_img, frame_text, (0,50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
+                if pointInRect(centre,centre_box)==False:
+                    # We have a complete sproket visible, but not in the centre of the frame...
+                    # Nudge forward until we find the sproket hole centre
+                    #print("Advance until sproket in centre frame")
+                    marlin_y+=0.40
+                    MoveFilm(marlin,marlin_y,NUDGE_FEED_RATE)
+                    continue
 
-                    filename=os.path.join( path,"frame_{:08d}.png".format(frame_number) )
-                    frame_number+=1
+                #cv.waitKey(100)
+                #cv.imshow('thrash',thrash)
+                #cv.imshow('canny_edges',canny_edges)
 
-                    # Save frame to disk
-                    #print("crop_img dims", crop_img.shape[:2])
-                    cv.imwrite(filename, crop_img)
+                #We have just found our sproket
 
-                    # Show it on screen
-                    cv.imshow('output',crop_img)
+                #It might get stuck oin a loop here...
+                print("Found frame {0} at position {1}".format(frame_number, marlin_y))
+                while True:
+                    #Take a fresh photo now the motion has stopped
+                    freeze_frame,centre = ProcessImage(videoCaptureObject,centre_box,video_width,video_height)
+                    if centre==None:
+                        print("Second photo didn't find sproket!")
+                        cv.imshow('output',freeze_frame)
+                    else:
+                        #print("New centre",centre)
+                        break
 
+                # Debug allow motion to stop
+                #cv.waitKey(5000)
+
+                #Double check the sproket is still in the correct place...
+                if pointInRect(centre,centre_box):
+                    try:
                         
-                    #Determine the average gap between captured frames
-                    steps=[]
-                    for n in range(0,len(last_y_list)-1,2):
-                        steps.append(last_y_list[n+1]-last_y_list[n])
+                        x=0
+                        #original height is 720 pixels, cut frame of super 8 down to 620 pixels height
+                        h=620
+                        y=int(centre[1])-int(h/2)
+                        #width 1280 pixels
+                        w=freeze_frame.shape[:2][1]
+                        #print("Freeze Image", freeze_frame.shape[:2])
+                        #print("Crop to x,y,w,h=",x,y,w,h)
+                        # Cut out the segment we want to keep - this is now positioned so the sproket
+                        # hole is always in the same location
+                        crop_img = freeze_frame[y:y+h,x:x+w].copy()
 
-                    if len(steps)>0:
-                        total_steps=0
-                        for n in steps:
-                            total_steps+=n
+                        #print("crop_img dims", crop_img.shape[:2])
 
-                        average_spacing=round(total_steps/len(steps),1)
-                        previous_frame_y=last_y_list[len(last_y_list)-1]                   
-                        last_frame_spacing=marlin_y-previous_frame_y
+                        # Debug output, mark image with frame number
+                        frame_text="{:08d}".format(frame_number)
+                        cv.putText(crop_img, frame_text, (0,50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
 
-                        print("Average Marlin steps between frames", average_spacing,", last frame=",last_frame_spacing)
+                        filename=os.path.join( path,"frame_{:08d}.png".format(frame_number) )
+                        frame_number+=1
 
-                        if last_frame_spacing>(average_spacing*1.5):
-                            print("Likely dropped frame")
-                            # Clear average out after a dropped frame :-(
-                            last_y_list=[]
+                        # Save frame to disk
+                        #print("crop_img dims", crop_img.shape[:2])
+                        cv.imwrite(filename, crop_img)
 
-                    #Now add on our new reading
-                    last_y_list.append(marlin_y)
-                    if len(last_y_list)>10:
-                        # Keep list at 10 items, remove first
-                        last_y_list.pop(0)
+                        # Show it on screen
+                        cv.imshow('output',crop_img)
 
-                except BaseException as CropErr:
-                    cv.imshow('output',freeze_frame)
-                    print(f"Unexpected {CropErr=}, {type(CropErr)=}")
+                            
+                        #Determine the average gap between captured frames
+                        steps=[]
+                        for n in range(0,len(last_y_list)-1,2):
+                            steps.append(last_y_list[n+1]-last_y_list[n])
 
-                # Now move film forward past the sproket hole so we don't take the same frame twice
-                # do this at a faster speed, to improve captured frames per second
-                marlin_y+=frame_spacing
-                MoveFilm(marlin,marlin_y,STANDARD_FEED_RATE)
-        
+                        if len(steps)>0:
+                            total_steps=0
+                            for n in steps:
+                                total_steps+=n
 
-    except BaseException as err:
-        print(f"Unexpected {err=}, {type(err)=}")
-        print("Press any key to shut down")
-        cv.waitKey()
+                            average_spacing=round(total_steps/len(steps),1)
+                            previous_frame_y=last_y_list[len(last_y_list)-1]                   
+                            last_frame_spacing=marlin_y-previous_frame_y
+
+                            print("Average Marlin steps between frames", average_spacing,", last frame=",last_frame_spacing)
+
+                            if last_frame_spacing>(average_spacing*1.5):
+                                print("Likely dropped frame")
+                                # Clear average out after a dropped frame :-(
+                                last_y_list=[]
+
+                        #Now add on our new reading
+                        last_y_list.append(marlin_y)
+                        if len(last_y_list)>10:
+                            # Keep list at 10 items, remove first
+                            last_y_list.pop(0)
+
+                    except BaseException as CropErr:
+                        cv.imshow('output',freeze_frame)
+                        print(f"Unexpected {CropErr=}, {type(CropErr)=}")
+
+                    # Now move film forward past the sproket hole so we don't take the same frame twice
+                    # do this at a faster speed, to improve captured frames per second
+                    marlin_y+=frame_spacing
+                    MoveFilm(marlin,marlin_y,STANDARD_FEED_RATE)
+            
+
+        except BaseException as err:
+            print(f"Unexpected {err=}, {type(err)=}")
+            print("Press any key to shut down")
+            cv.waitKey()
 
     DisconnectFromMarlin(marlin)
 
     videoCaptureObject.release()
     cv.destroyAllWindows()
-
 
 
 if __name__ == "__main__":
