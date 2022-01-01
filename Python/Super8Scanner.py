@@ -99,9 +99,9 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
     image_height = frame.shape[:2][0]
 
     # Mask out any plastic gate on left/right/top/bottom of frame
-    gate_mask = np.zeros(frame.shape[:2], dtype="uint8")
-    cv.rectangle(gate_mask, (75, 0), (image_width-75, image_height), 255, -1)
-    frame = cv.bitwise_and(frame, frame, mask=gate_mask)
+    #gate_mask = np.zeros(frame.shape[:2], dtype="uint8")
+    #cv.rectangle(gate_mask, (75, 0), (image_width-75, image_height), 255, -1)
+    #frame = cv.bitwise_and(frame, frame, mask=gate_mask)
 
     # Mask left side of image to find the sprokets, crop out words on film like "KODAK LABS"
     # we are looking for a narrow vertical section of the sprokets, not including any film picture
@@ -314,8 +314,8 @@ def main():
     videoCaptureObject, video_width, video_height = ConfigureCamera()
 
     # Constants (sort of)
-    NUDGE_FEED_RATE = 320
-    STANDARD_FEED_RATE = 5000
+    NUDGE_FEED_RATE = 1000
+    STANDARD_FEED_RATE = 10000
 
     # This is the trigger rectangle for the sproket identification
     # must be in the centre of the screen without cropping each frame of Super8
@@ -326,6 +326,9 @@ def main():
 
     if StartupAlignment(marlin, videoCaptureObject, centre_box, video_width, video_height) == True:
 
+        # Crude FPS calculation
+        time_start = datetime.now()
+
         # Total number of images stored as a unique frame
         frame_number = 0
         # Position on film reel (in marlin Y units)
@@ -333,7 +336,7 @@ def main():
         # Total number of images taken
         frame_counter = 0
         # Default space (in marlin Y units) between frames on the reel
-        frame_spacing = 21
+        frame_spacing = 20
         # List of positions (marlin y) where last frames were captured/found
         last_y_list = []
 
@@ -353,8 +356,10 @@ def main():
                 if manual_control==True:
                     # Space
                     if k == 32:
-                        print("Manual control cancelled")
+                        print("Manual control ended")
                         manual_control=False
+                        # Reset FPS counter
+                        time_start = datetime.now()
 
                     # Manual reel control (for when sproket is not detected)
                     if k == ord('f'):
@@ -402,13 +407,25 @@ def main():
                     # We have a complete sproket visible, but not in the centre of the frame...
                     # Nudge forward until we find the sproket hole centre
                     #print("Advance until sproket in centre frame")
-                    marlin_y += 1
+                    
+                    #How far off are we?
+                    diff_pixels=abs(video_height/2 - centre[1])
+
+                    # sproket if below centre line, move reel up
+                    if centre[1]>video_height/2:
+                        print("FORWARD!",marlin_y,"diff pixels=", diff_pixels)
+                        marlin_y += 1.5
+                    else:
+                        # sproket if above centre line, move reel down (need to be careful about reverse feeding film reel into gate)
+                        # move slowly/small steps
+                        print("REVERSE!",marlin_y,"diff pixels=", diff_pixels)
+                        #Fixed step distance for reverse
+                        marlin_y -= 0.5
+
                     MoveFilm(marlin, marlin_y, NUDGE_FEED_RATE)
                     continue
 
                 # We have just found our sproket
-
-                print("Found frame {0} at position {1}".format(frame_number, marlin_y))
 
                 # Take a fresh photo now the motion has stopped, ensure the centre is calculated...
                 for n in range(0, 10):
@@ -420,69 +437,87 @@ def main():
                     print("ERROR: Lost frame - Freeze frame photo didn't find sproket!")
                     continue
 
+                print("Found frame {0} at position {1} with sproket centre {2}".format(frame_number, marlin_y, centre))
+
                 # Double check the sproket is still in the correct place...
                 if pointInRect(centre, centre_box):
-                    try:
-                        x = 0
-                        # original height is 720 pixels, cut frame of super 8 down to 620 pixels height
-                        h = 620
-                        y = int(centre[1])-int(h/2)
-                        # width 1280 pixels
-                        w = freeze_frame.shape[:2][1]
-                        #print("Freeze Image", freeze_frame.shape[:2])
-                        #print("Crop to x,y,w,h=",x,y,w,h)
-                        # Cut out the segment we want to keep - this is now positioned so the sproket
-                        # hole is always in the same location
-                        crop_img = freeze_frame[y:y+h, x:x+w].copy()
+                    #try:
 
-                        #print("crop_img dims", crop_img.shape[:2])
+                    # Create blank (black) image for output at FULL HD res - 1920x1080
+                    output_image = np.zeros((1080,1920,3), np.uint8)
+                    output_image_height, output_image_width = output_image.shape[:2]
 
-                        # Debug output, mark image with frame number
-                        frame_text = "{:08d}".format(frame_number)
-                        cv.putText(crop_img, frame_text, (0, 50),cv.FONT_HERSHEY_SIMPLEX, 0.6, (100, 100, 100), 2, cv.LINE_AA)
+                    #print("crop_img dims", crop_img.shape[:2])
+                    h, w = freeze_frame.shape[:2]
+                    
+                    #crop_img = freeze_frame[y:y+h, x:x+w].copy()
+                    # Put the smaller image inside our output_image, but align it on its centre line                      
 
-                        filename = os.path.join(
-                            path, "frame_{:08d}.png".format(frame_number))
-                        frame_number += 1
+                    # Horizontal centre line
+                    x= int(output_image_width/2) - int(w/2)
 
-                        # Save frame to disk
-                        cv.imwrite(filename, crop_img)
+                    # Vertically centre smaller image inside larger one
+                    y= int( output_image_height/2 - h/2)
 
-                        # Show it on screen
-                        cv.imshow('output', crop_img)
+                    # Offset for vertical sproket alignment based on OpenCV
+                    y+=int(h/2 - centre[1])
 
-                        # Determine the average gap between captured frames
-                        steps = []
-                        for n in range(0, len(last_y_list)-1, 2):
-                            steps.append(last_y_list[n+1]-last_y_list[n])
+                    y2=int(y+h)
+                    x2=int(x+w)
 
-                        if len(steps) > 0:
-                            total_steps = 0
-                            for n in steps:
-                                total_steps += n
+                    # Vertical centre line
+                    print(y,y2,x,x2)
+                    output_image[y:y2,x:x2] = freeze_frame
 
-                            average_spacing = round(total_steps/len(steps), 1)
-                            previous_frame_y = last_y_list[len(last_y_list)-1]
-                            last_frame_spacing = round(
-                                marlin_y-previous_frame_y, 2)
+                    # Debug output, mark image with frame number
+                    frame_text = "{:08d}".format(frame_number)
+                    cv.putText(output_image, frame_text, (0, 50),cv.FONT_HERSHEY_SIMPLEX, 0.6, (100, 100, 100), 2, cv.LINE_AA)
 
-                            print("Average Marlin steps between frames",
-                                  average_spacing, ", last frame=", last_frame_spacing)
+                    filename = os.path.join( path, "frame_{:08d}.png".format(frame_number))
+                    frame_number += 1
 
-                            if last_frame_spacing > (average_spacing*1.5):
-                                print("Likely dropped frame")
-                                # Clear average out after a dropped frame :-(
-                                last_y_list = []
+                    # Save frame to disk, use lower compression to save CPU time (not image quality png = lossless)
+                    cv.imwrite(filename, output_image ,[cv.IMWRITE_PNG_COMPRESSION, 2])
+                    #cv.imwrite(filename, crop_img ,[cv.IMWRITE_PNG_COMPRESSION, 2])
+                    
+                    fps = frame_number/ (datetime.now()-time_start).total_seconds()
+                    print("Capture FPS",fps)
 
-                        # Now add on our new reading
-                        last_y_list.append(marlin_y)
-                        if len(last_y_list) > 20:
-                            # Keep list at 20 items, remove first
-                            last_y_list.pop(0)
+                    # Show it on screen
+                    cv.imshow('output', output_image)
 
-                    except BaseException as CropErr:
-                        cv.imshow('output', freeze_frame)
-                        print(f"Unexpected {CropErr=}, {type(CropErr)=}")
+                    # Determine the average gap between captured frames
+                    steps = []
+                    for n in range(0, len(last_y_list)-1, 2):
+                        steps.append(last_y_list[n+1]-last_y_list[n])
+
+                    if len(steps) > 0:
+                        total_steps = 0
+                        for n in steps:
+                            total_steps += n
+
+                        average_spacing = round(total_steps/len(steps), 1)
+                        previous_frame_y = last_y_list[len(last_y_list)-1]
+                        last_frame_spacing = round(
+                            marlin_y-previous_frame_y, 2)
+
+                        print("Average Marlin steps between frames",
+                                average_spacing, ", last frame=", last_frame_spacing)
+
+                        if last_frame_spacing > (average_spacing*1.5):
+                            print("Likely dropped frame")
+                            # Clear average out after a dropped frame :-(
+                            last_y_list = []
+
+                    # Now add on our new reading
+                    last_y_list.append(marlin_y)
+                    if len(last_y_list) > 20:
+                        # Keep list at 20 items, remove first
+                        last_y_list.pop(0)
+
+                    #except BaseException as CropErr:
+                    #    cv.imshow('output', freeze_frame)
+                    #    print(f"Unexpected {CropErr=}, {type(CropErr)=}")
 
                     # Now move film forward past the sproket hole so we don't take the same frame twice
                     # do this at a faster speed, to improve captured frames per second
