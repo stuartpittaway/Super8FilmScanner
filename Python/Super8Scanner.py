@@ -193,6 +193,13 @@ def MoveFilm(marlin: Serial, y: float, feed_rate: int):
     # Wait for move complete
     SendMarlinCmd(marlin, "M400")
 
+# Used to rewind the reel/take up slack reel onto spool
+def MoveReel(marlin: Serial, z: float, feed_rate: int, wait_for_completion=True):
+    SendMarlinCmd(marlin, "G0 Z{0:.4f} F{1}".format(z, feed_rate))
+    if wait_for_completion:
+        # Wait for move complete
+        SendMarlinCmd(marlin, "M400")
+
 
 def ConnectToMarlin():
     #ports = list(port_list.comports())
@@ -215,17 +222,17 @@ def ConnectToMarlin():
     # M106 - Fan On (LED LIGHT)
     # G92 - Set Position
     # M201 - Set Print Max Acceleration (off)
+    # M18 - Disable steppers (after 60 seconds)
     SendMultipleMarlinCmd(
-        marlin, ["M502", "G21", "M211 S0", "G90", "M106", "G92 X0 Y0 Z0", "M201 Y0"])
+        marlin, ["M502", "G21", "M211 S0", "G90", "M106", "G92 X0 Y0 Z0", "M201 Y0","M18 S60","M203 Y500.00 Z2500.00"])
 
     # M92 - Set Axis Steps-per-unit
-    # Steps per millimeter - 51.5 for 19mm rubber band wheel (lumpy and not circle!)
-    # Just a fake number!
-    SendMarlinCmd(marlin, "M92 Y10")
+    # Just a fake number to keep things uniform, 10 steps
+    # 8.888 steps for reel motor, 1 unit is 1 degree = 360 degrees per revolution
+    SendMarlinCmd(marlin, "M92 Y10 Z8.888888")
 
     # Wait for movement to complete
     SendMarlinCmd(marlin, "M400")
-
     return marlin
 
 
@@ -279,6 +286,7 @@ def OutputFolder() -> str:
 
 def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width, video_height):
     marlin_y = 0
+    reel_z = 0
 
     return_value = False
 
@@ -287,11 +295,16 @@ def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width
             videoCaptureObject, centre_box, video_width, video_height, True)
 
         if centre == None:
-            cv.putText(my_frame, "Sproket not detected, press f to nudge forward, b for back, j to jump forward quickly, ESC to quit",
-                       (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2, cv.LINE_AA)
+            cv.putText(my_frame, "Sproket not detected",
+                       (10, 100), cv.FONT_HERSHEY_SIMPLEX, 1.25, (0, 0, 255), 2, cv.LINE_AA)
         else:
-            cv.putText(my_frame, "Sproket detected, press SPACE to start scanning, ESC to quit",
-                       (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv.LINE_AA)
+            cv.putText(my_frame, "Sproket detected, press SPACE to start scanning",
+                       (10, 100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv.LINE_AA)
+
+        cv.putText(my_frame, "press f to nudge forward, b for back, j to jump forward quickly,",
+                    (10, 200), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 50), 2, cv.LINE_AA)
+        cv.putText(my_frame, "r to rewind spool (1 revolution), ESC to quit",
+                    (10, 230), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 50), 2, cv.LINE_AA)
 
         cv.imshow('RawVideo', my_frame)
 
@@ -317,6 +330,11 @@ def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width
         if k == ord('b'):
             marlin_y -= 1
             MoveFilm(marlin, marlin_y, 500)
+
+        if k == ord('r'):
+            #Rewind tape reel
+            reel_z-=360
+            MoveReel(marlin,reel_z, 15000, False)
 
     return return_value
 
@@ -369,7 +387,15 @@ def main():
             int(video_height+100), int(video_width+100), 3)
 
         try:
+
+            micro_adjustment_steps=0
+
             while True:
+
+                if micro_adjustment_steps>25:
+                    #Emergency manual mode as too many small adjustments made (save wear on film)
+                    manual_control=True
+
                 # Check keyboard
                 k = cv.waitKey(1) & 0xFF
 
@@ -443,16 +469,18 @@ def main():
                     # How far off are we?
                     diff_pixels = abs(video_height/2 - centre[1])
 
+                    # As a precaution, limit the total number of small adjustments made
+                    # per frame, to avoid going in endless loops and damaging the reel
+                    micro_adjustment_steps+=1
+
                     # sproket if below centre line, move reel up
-                    if centre[1] > video_height/2:
-                        print("FORWARD!", marlin_y,
-                              "diff pixels=", diff_pixels)
+                    if centre[1] > video_height/2:                        
+                        print("FORWARD!", marlin_y, "diff pixels=", diff_pixels)
                         marlin_y += 1.5
                     else:
                         # sproket if above centre line, move reel down (need to be careful about reverse feeding film reel into gate)
                         # move slowly/small steps
-                        print("REVERSE!", marlin_y,
-                              "diff pixels=", diff_pixels)
+                        #print("REVERSE!", marlin_y, "diff pixels=", diff_pixels)
                         # Fixed step distance for reverse
                         marlin_y -= 0.5
 
@@ -562,6 +590,8 @@ def main():
                     # do this at a faster speed, to improve captured frames per second
                     marlin_y += frame_spacing
                     MoveFilm(marlin, marlin_y, STANDARD_FEED_RATE)
+
+                    micro_adjustment_steps=0
 
         except BaseException as err:
             print(f"Unexpected {err=}, {type(err)=}")
