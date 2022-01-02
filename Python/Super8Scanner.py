@@ -2,14 +2,28 @@
 #
 # (c)2021 Stuart Pittaway
 #
+# The purpose of this program is to digitize Super8 film reel using an inexpensive USB style camera
+# it uses OpenCV to detect the alignment of the images using the film reel sprokets as alignment targets.
+# It outputs a PNG image per frame, which are vertically aligned, but frame borders and horizontal alignment
+# are not cropped, removed or fixed.  This is the job of a second script to complete this work.
 #
+# USB camera images are captured using YUV mode and images saved as PNG to avoid any compression artifacts during
+# the capture and alignment processes
+#
+# Test on Windows 10 using 1M pixel web camera on an exposed PCB (available on Aliexpress etc.)
+#
+# Expects to control a MARLIN style stepper driver board
+# Y axis is used to drive film feed rollers
+# Z axis is used to drive film reel take up spool
+# FAN output is used to drive LED light for back light of frames
+
 import numpy as np
 import cv2 as cv
 import os
 import serial
 from serial.serialwin32 import Serial
 import serial.tools.list_ports as port_list
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import sleep
 
 
@@ -75,7 +89,11 @@ def SendMultipleMarlinCmd(MarlinSerialPort: Serial, cmds: list) -> bool:
     return True
 
 
-def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_height: int):
+def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_height: int, draw_rects=True):
+    # Contour of detected sproket needs to be this large to be classed as valid (area)
+    AREA_OF_SPROKET = 8500
+
+    # Take a picture, in raw YUV mode (avoid MJPEG compression/artifacts)
     cap, frame = videoCaptureObject.read()
 
     if cap == False:
@@ -95,17 +113,11 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
     frame = cv.flip(frame, 1)
 
     # Normally 1280x720 for 1M camera
-    image_width = frame.shape[:2][1]
-    image_height = frame.shape[:2][0]
-
-    # Mask out any plastic gate on left/right/top/bottom of frame
-    #gate_mask = np.zeros(frame.shape[:2], dtype="uint8")
-    #cv.rectangle(gate_mask, (75, 0), (image_width-75, image_height), 255, -1)
-    #frame = cv.bitwise_and(frame, frame, mask=gate_mask)
+    image_height, image_width = frame.shape[:2]
 
     # Mask left side of image to find the sprokets, crop out words on film like "KODAK LABS"
     # we are looking for a narrow vertical section of the sprokets, not including any film picture
-    # or the curved corners of the sproket hole.
+    # or the curved corners of the sproket holes
     sproket_mask = np.zeros(frame.shape[:2], dtype="uint8")
     x = int(image_width*0.15)
     cv.rectangle(sproket_mask, (130, 0), (x, image_height), 255, -1)
@@ -117,7 +129,7 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
     frame_blur = cv.GaussianBlur(masked, matrix, 0)
     imgGry = cv.cvtColor(frame_blur, cv.COLOR_BGR2GRAY)
 
-    # Threshold to only keep the sproket data visible (bright white now)
+    # Threshold to only keep the sproket data visible (which is now bright white)
     _, thrash = cv.threshold(imgGry, 200, 255, cv.THRESH_BINARY)
     # cv.imshow("thrash",thrash)
 
@@ -129,9 +141,10 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
     contours, _ = cv.findContours(
         canny_edges, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
 
-    # Draw the target centre box we are looking for (just for debug)
-    cv.rectangle(frame, (centre_box[0], centre_box[1]), (
-        centre_box[0]+centre_box[2], centre_box[1]+centre_box[3]), (0, 255, 0), 2)
+    if draw_rects:
+        # Draw the target centre box we are looking for (just for debug)
+        cv.rectangle(frame, (centre_box[0], centre_box[1]), (
+            centre_box[0]+centre_box[2], centre_box[1]+centre_box[3]), (0, 255, 0), 2)
 
     # Sort by area, largest first (hopefully our sproket - we should only have 1 full sprocket in view at any 1 time)
     contours = sorted(contours, key=lambda x: cv.contourArea(x), reverse=True)
@@ -144,7 +157,7 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
         area = cv.contourArea(contour)
 
         # Sproket must be bigger than this to be okay...
-        if area > 8500:
+        if area > AREA_OF_SPROKET:
             # (center(x, y), (width, height), angleofrotation) = cv.minAreaRect(contour)
             rect = cv.minAreaRect(contour)
             rotation = rect[2]
@@ -155,15 +168,17 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
             colour = (0, 0, 255)
 
             # Mark centre of sproket with a circle
-            cv.circle(frame, (int(centre[0]), int(
-                centre[1])), 8, (0, 100, 100), -1)
+            if draw_rects:
+                cv.circle(frame, (int(centre[0]), int(
+                    centre[1])), 8, (0, 100, 100), -1)
 
-            # Draw the rectangle
-            cv.drawContours(frame, [box], 0, colour, 2)
+                # Draw the rectangle
+                cv.drawContours(frame, [box], 0, colour, 2)
+
             return frame, centre
-        else:
+        # else:
             #print("Area is ",area)
-            pass
+            # pass
     else:
         cv.putText(frame, "No contour", (0, 50),
                    cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
@@ -269,7 +284,7 @@ def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width
 
     while True:
         my_frame, centre = ProcessImage(
-            videoCaptureObject, centre_box, video_width, video_height)
+            videoCaptureObject, centre_box, video_width, video_height, True)
 
         if centre == None:
             cv.putText(my_frame, "Sproket not detected, press f to nudge forward, b for back, j to jump forward quickly, ESC to quit",
@@ -305,6 +320,11 @@ def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width
 
     return return_value
 
+# Generate timecode based on total number of frames
+def timecode(n:int) -> str:
+    frames = int(n % 18)
+    seconds = timedelta(seconds=int((n - frames) / 18))
+    return "{0}.{1}".format(seconds, frames)
 
 def main():
     #print( cv.__version__ )
@@ -333,8 +353,6 @@ def main():
         frame_number = 0
         # Position on film reel (in marlin Y units)
         marlin_y = 0.0
-        # Total number of images taken
-        frame_counter = 0
         # Default space (in marlin Y units) between frames on the reel
         frame_spacing = 20
         # List of positions (marlin y) where last frames were captured/found
@@ -343,7 +361,12 @@ def main():
         # Reset Marlin to be zero (homed!!)
         SendMarlinCmd(marlin, "G92 X0 Y0 Z0")
 
-        manual_control=False
+        manual_control = False
+
+        # Output video size is larger than the capture size to cope with vertical image stabilization
+        # these images will need to be further processed to make valid video files
+        output_video_frame_size = (
+            int(video_height+100), int(video_width+100), 3)
 
         try:
             while True:
@@ -353,11 +376,11 @@ def main():
                 if k == 27:    # Esc key to stop/abort
                     break
 
-                if manual_control==True:
+                if manual_control == True:
                     # Space
                     if k == 32:
                         print("Manual control ended")
-                        manual_control=False
+                        manual_control = False
                         # Reset FPS counter
                         time_start = datetime.now()
 
@@ -376,27 +399,36 @@ def main():
                 # Sometimes OpenCV doesn't detect centre in a particular frame, so try up to 10 times with new
                 # camera images before giving up...
                 for n in range(0, 10):
-                    my_frame, centre = ProcessImage(videoCaptureObject, centre_box, video_width, video_height)
-                    frame_counter += 1
+                    my_frame, centre = ProcessImage(
+                        videoCaptureObject, centre_box, video_width, video_height, True)
                     if centre != None:
                         break
 
+                if frame_number > 0:
+                    fps = frame_number / \
+                        (datetime.now()-time_start).total_seconds()
+                    print("Capture FPS", fps)
+                    cv.putText(my_frame, "Capture FPS {0:.2f}".format(
+                        fps), (0, 150), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv.LINE_AA)
+
                 if manual_control == True:
-                    cv.putText(my_frame, "Manual Control Active, keys f/b to align and SPACE to continue", (0, 300), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv.LINE_AA)
+                    cv.putText(my_frame, "Manual Control Active, keys f/b to align and SPACE to continue",
+                               (0, 300), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv.LINE_AA)
 
                 if centre == None:
                     cv.putText(my_frame, "SPROKET LOST", (0, 200),
                                cv.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 2, cv.LINE_AA)
 
-                # Display the raw frame on screen
-                cv.putText(my_frame, "{:08d}".format(frame_counter), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv.LINE_AA)
+                # Display the time on screen, just to prove image is updating
+                cv.putText(my_frame, datetime.now().strftime(
+                    "%X"), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv.LINE_AA)
 
                 cv.imshow('RawVideo', my_frame)
 
                 if centre == None:
                     # We don't have a WHOLE sproket visible on the photo (may be partial ones)
                     # Stop and allow user/manual alignment
-                    manual_control=True
+                    manual_control = True
                     continue
 
                 if manual_control == True:
@@ -407,19 +439,21 @@ def main():
                     # We have a complete sproket visible, but not in the centre of the frame...
                     # Nudge forward until we find the sproket hole centre
                     #print("Advance until sproket in centre frame")
-                    
-                    #How far off are we?
-                    diff_pixels=abs(video_height/2 - centre[1])
+
+                    # How far off are we?
+                    diff_pixels = abs(video_height/2 - centre[1])
 
                     # sproket if below centre line, move reel up
-                    if centre[1]>video_height/2:
-                        print("FORWARD!",marlin_y,"diff pixels=", diff_pixels)
+                    if centre[1] > video_height/2:
+                        print("FORWARD!", marlin_y,
+                              "diff pixels=", diff_pixels)
                         marlin_y += 1.5
                     else:
                         # sproket if above centre line, move reel down (need to be careful about reverse feeding film reel into gate)
                         # move slowly/small steps
-                        print("REVERSE!",marlin_y,"diff pixels=", diff_pixels)
-                        #Fixed step distance for reverse
+                        print("REVERSE!", marlin_y,
+                              "diff pixels=", diff_pixels)
+                        # Fixed step distance for reverse
                         marlin_y -= 0.5
 
                     MoveFilm(marlin, marlin_y, NUDGE_FEED_RATE)
@@ -429,62 +463,67 @@ def main():
 
                 # Take a fresh photo now the motion has stopped, ensure the centre is calculated...
                 for n in range(0, 10):
-                    freeze_frame, centre = ProcessImage(videoCaptureObject, centre_box, video_width, video_height)
+                    freeze_frame, centre = ProcessImage(videoCaptureObject, centre_box, video_width, video_height, False)
                     if centre != None:
                         break
 
                 if centre == None:
                     print("ERROR: Lost frame - Freeze frame photo didn't find sproket!")
+                    manual_control = True
                     continue
 
-                print("Found frame {0} at position {1} with sproket centre {2}".format(frame_number, marlin_y, centre))
+                print("Found frame {0} at position {1} with sproket centre {2}".format(
+                    frame_number, marlin_y, centre))
 
                 # Double check the sproket is still in the correct place...
                 if pointInRect(centre, centre_box):
-                    #try:
+                    # try:
 
                     # Create blank (black) image for output at FULL HD res - 1920x1080
-                    output_image = np.zeros((1080,1920,3), np.uint8)
+                    output_image = np.zeros(output_video_frame_size, np.uint8)
                     output_image_height, output_image_width = output_image.shape[:2]
+                    #print("output_image",output_image_height, output_image_width)
 
                     #print("crop_img dims", crop_img.shape[:2])
                     h, w = freeze_frame.shape[:2]
-                    
+                    # print("freeze_frame",h,w)
+
                     #crop_img = freeze_frame[y:y+h, x:x+w].copy()
-                    # Put the smaller image inside our output_image, but align it on its centre line                      
+                    # Put the smaller image inside our output_image, but align it on its centre line
 
                     # Horizontal centre line
-                    x= int(output_image_width/2) - int(w/2)
+                    x = int(output_image_width/2) - int(w/2)
 
                     # Vertically centre smaller image inside larger one
-                    y= int( output_image_height/2 - h/2)
+                    y = int(output_image_height/2 - h/2)
 
                     # Offset for vertical sproket alignment based on OpenCV
-                    y+=int(h/2 - centre[1])
-
-                    y2=int(y+h)
-                    x2=int(x+w)
+                    y += int(h/2 - centre[1])
+                    y2 = int(y+h)
+                    x2 = int(x+w)
 
                     # Vertical centre line
-                    print(y,y2,x,x2)
-                    output_image[y:y2,x:x2] = freeze_frame
+                    print(y, y2, x, x2)
+                    output_image[y:y2, x:x2] = freeze_frame
 
                     # Debug output, mark image with frame number
-                    frame_text = "{:08d}".format(frame_number)
-                    cv.putText(output_image, frame_text, (0, 50),cv.FONT_HERSHEY_SIMPLEX, 0.6, (100, 100, 100), 2, cv.LINE_AA)
+                    cv.putText(output_image, "{:08d}".format(
+                        frame_number), (0, 50), cv.FONT_HERSHEY_SIMPLEX, 0.4, (150, 150, 150), 2, cv.LINE_AA)
 
-                    filename = os.path.join( path, "frame_{:08d}.png".format(frame_number))
+                    # Generate a video timecode (H:M:S:FRAMES)
+
+                    cv.putText(output_image, timecode(frame_number), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2, cv.LINE_AA)
+
+                    filename = os.path.join(
+                        path, "frame_{:08d}.png".format(frame_number))
                     frame_number += 1
 
                     # Save frame to disk, use lower compression to save CPU time (not image quality png = lossless)
-                    cv.imwrite(filename, output_image ,[cv.IMWRITE_PNG_COMPRESSION, 2])
-                    #cv.imwrite(filename, crop_img ,[cv.IMWRITE_PNG_COMPRESSION, 2])
-                    
-                    fps = frame_number/ (datetime.now()-time_start).total_seconds()
-                    print("Capture FPS",fps)
+                    cv.imwrite(filename, output_image, [
+                               cv.IMWRITE_PNG_COMPRESSION, 2])
 
                     # Show it on screen
-                    cv.imshow('output', output_image)
+                    #cv.imshow('output', output_image)
 
                     # Determine the average gap between captured frames
                     steps = []
@@ -502,7 +541,7 @@ def main():
                             marlin_y-previous_frame_y, 2)
 
                         print("Average Marlin steps between frames",
-                                average_spacing, ", last frame=", last_frame_spacing)
+                              average_spacing, ", last frame=", last_frame_spacing)
 
                         if last_frame_spacing > (average_spacing*1.5):
                             print("Likely dropped frame")
@@ -515,7 +554,7 @@ def main():
                         # Keep list at 20 items, remove first
                         last_y_list.pop(0)
 
-                    #except BaseException as CropErr:
+                    # except BaseException as CropErr:
                     #    cv.imshow('output', freeze_frame)
                     #    print(f"Unexpected {CropErr=}, {type(CropErr)=}")
 
