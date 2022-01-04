@@ -19,8 +19,10 @@
 
 import numpy as np
 import cv2 as cv
+import glob
 import os
 import serial
+import math
 from serial.serialwin32 import Serial
 import serial.tools.list_ports as port_list
 from datetime import datetime, timedelta
@@ -89,9 +91,9 @@ def SendMultipleMarlinCmd(MarlinSerialPort: Serial, cmds: list) -> bool:
     return True
 
 
-def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_height: int, draw_rects=True):
+def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_height: int, draw_rects=True, yuv=True):
     # Contour of detected sproket needs to be this large to be classed as valid (area)
-    AREA_OF_SPROKET = 7000
+    AREA_OF_SPROKET = 6500
 
     # Take a picture, in raw YUV mode (avoid MJPEG compression/artifacts)
     cap, frame = videoCaptureObject.read()
@@ -99,15 +101,16 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
     if cap == False:
         raise IOError("Failed to capture image")
 
-    # Capture of 1280x720 image is 1280 x 720 x 3/2 (1382400 bytes)
-    # 1280x720 16 bit
-    # ImgSz=1843200
-    # 1843200 Sample Size
-    # SubType YUY2
-    shape = (int(video_height * 1.5), int(video_width))
-    frame = frame.reshape(shape)
-    # Convert YUV2 into RGB for OpenCV to use
-    frame = cv.cvtColor(frame, cv.COLOR_YUV2BGR_NV12)
+    if yuv:
+        # Capture of 1280x720 image is 1280 x 720 x 3/2 (1382400 bytes)
+        # 1280x720 16 bit
+        # ImgSz=1843200
+        # 1843200 Sample Size
+        # SubType YUY2
+        shape = (int(video_height * 1.5), int(video_width))
+        frame = frame.reshape(shape)
+        # Convert YUV2 into RGB for OpenCV to use
+        frame = cv.cvtColor(frame, cv.COLOR_YUV2BGR_NV12)
 
     # Mirror horizontal - sproket is now on left of image
     frame = cv.flip(frame, 1)
@@ -121,23 +124,23 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
     sproket_mask = np.zeros(frame.shape[:2], dtype="uint8")
     x1 = int(centre_box[0])
     x2 = int(centre_box[0]+centre_box[2])
-    #top-left corner and bottom-right corner 
+    # top-left corner and bottom-right corner
     cv.rectangle(sproket_mask, (x1, 0), (x2, image_height), 255, -1)
     masked = cv.bitwise_and(frame, frame, mask=sproket_mask)
-    #cv.imshow("masked",masked)
+    # cv.imshow("masked",masked)
 
     # Blur the image and convert to grayscale
-    matrix = (17, 7)
+    matrix = (19, 7)
     frame_blur = cv.GaussianBlur(masked, matrix, 0)
     imgGry = cv.cvtColor(frame_blur, cv.COLOR_BGR2GRAY)
 
     # Threshold to only keep the sproket data visible (which is now bright white)
-    _, thrash = cv.threshold(imgGry, 200, 255, cv.THRESH_BINARY)
-    #cv.imshow("thrash",thrash)
+    _, thrash = cv.threshold(imgGry, 170, 255, cv.THRESH_BINARY)
+    # cv.imshow("thrash",thrash)
 
     # find Canny Edges
     canny_edges = cv.Canny(thrash, 30, 200)
-    #cv.imshow("canny_edges",canny_edges)
+    # cv.imshow("canny_edges",canny_edges)
 
     # Get contour of the sproket
     contours, _ = cv.findContours(
@@ -163,10 +166,11 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
             # (center(x, y), (width, height), angleofrotation) = cv.minAreaRect(contour)
             rect = cv.minAreaRect(contour)
             rotation = rect[2]
+            centre = rect[0]
             # Gets center of rotated rectangle
             box = cv.boxPoints(rect)
+            # Convert dimensions to ints
             box = np.int0(box)
-            centre = rect[0]
             colour = (0, 0, 255)
 
             # Mark centre of sproket with a circle
@@ -177,15 +181,15 @@ def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_h
                 # Draw the rectangle
                 cv.drawContours(frame, [box], 0, colour, 2)
 
-            return frame, centre
-        #else:
+            return frame, centre, box
+        # else:
             #print("Area is ",area)
             # pass
     else:
         cv.putText(frame, "No contour", (0, 50),
                    cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
 
-    return frame, None
+    return frame, None, None
 
 
 def MoveFilm(marlin: Serial, y: float, feed_rate: int):
@@ -196,6 +200,8 @@ def MoveFilm(marlin: Serial, y: float, feed_rate: int):
     SendMarlinCmd(marlin, "M400")
 
 # Used to rewind the reel/take up slack reel onto spool
+
+
 def MoveReel(marlin: Serial, z: float, feed_rate: int, wait_for_completion=True):
     SendMarlinCmd(marlin, "G0 Z{0:.4f} F{1}".format(z, feed_rate))
     if wait_for_completion:
@@ -226,7 +232,7 @@ def ConnectToMarlin():
     # M201 - Set Print Max Acceleration (off)
     # M18 - Disable steppers (after 60 seconds)
     SendMultipleMarlinCmd(
-        marlin, ["M502", "G21", "M211 S0", "G90", "M106", "G92 X0 Y0 Z0", "M201 Y0","M18 S60","M203 Y500.00 Z2500.00"])
+        marlin, ["M502", "G21", "M211 S0", "G90", "M106", "G92 X0 Y0 Z0", "M201 Y0", "M18 S30", "M203 X1000.00 Y1000.00 Z2500.00"])
 
     # M92 - Set Axis Steps-per-unit
     # Just a fake number to keep things uniform, 10 steps
@@ -250,36 +256,48 @@ def decode_fourcc(v):
     return "".join([chr((v >> 8 * i) & 0xFF) for i in range(4)])
 
 
-def ConfigureCamera():
+def ConfigureCamera(device_number: int, yuv: bool, width: int, height: int):
     # Open webcamera
-    videoCaptureObject = cv.VideoCapture(1, cv.CAP_MSMF)
+    videoCaptureObject = cv.VideoCapture(device_number, cv.CAP_MSMF)
 
     if not (videoCaptureObject.isOpened()):
         raise Exception("Could not open video device")
 
-    if videoCaptureObject.set(cv.CAP_PROP_FRAME_WIDTH, 1280) == False:
+    if videoCaptureObject.set(cv.CAP_PROP_FRAME_WIDTH, width) == False:
+        raise Exception("Unable to set width")
+
+    if videoCaptureObject.set(cv.CAP_PROP_FRAME_HEIGHT, height) == False:
+        raise Exception("Unable to set height")
+
+    if yuv:
+        # Request raw camera data (YUV mode, to avoid JPEG artifacts)
+        if videoCaptureObject.set(cv.CAP_PROP_CONVERT_RGB, 0) == False:
+            raise Exception("Unable to set video capture parameter")
+
+        if decode_fourcc(videoCaptureObject.get(cv.CAP_PROP_FOURCC)) != "NV12":
+            raise Exception("Camera not in raw YUV4:2:0 format")
+
+    if videoCaptureObject.set(cv.CAP_PROP_EXPOSURE, -8) == False:
         raise Exception("Unable to set video capture parameter")
-
-    if videoCaptureObject.set(cv.CAP_PROP_FRAME_HEIGHT, 720) == False:
+    if videoCaptureObject.set(cv.CAP_PROP_BRIGHTNESS, 0) == False:
         raise Exception("Unable to set video capture parameter")
-
-    # Request raw camera data (YUV mode, to avoid JPEG artifacts)
-    if videoCaptureObject.set(cv.CAP_PROP_CONVERT_RGB, 0) == False:
+    if videoCaptureObject.set(cv.CAP_PROP_CONTRAST, 3) == False:
         raise Exception("Unable to set video capture parameter")
-
-    if decode_fourcc(videoCaptureObject.get(cv.CAP_PROP_FOURCC)) != "NV12":
-        raise Exception("Camera not in raw YUV4:2:0 format")
-
-    if videoCaptureObject.set(cv.CAP_PROP_EXPOSURE ,0) == False:
+    if videoCaptureObject.set(cv.CAP_PROP_BACKLIGHT, 0) == False:
         raise Exception("Unable to set video capture parameter")
-
-    #if videoCaptureObject.set(cv.CAP_PROP_AUTO_WB,0) == False:
+    if videoCaptureObject.set(cv.CAP_PROP_GAIN, 1) == False:
+        raise Exception("Unable to set video capture parameter")
+    if videoCaptureObject.set(cv.CAP_PROP_GAMMA, 84) == False:
+        raise Exception("Unable to set video capture parameter")
+    if videoCaptureObject.set(cv.CAP_PROP_HUE, 0) == False:
+        raise Exception("Unable to set video capture parameter")
+    if videoCaptureObject.set(cv.CAP_PROP_SATURATION, 56) == False:
+        raise Exception("Unable to set video capture parameter")
+    if videoCaptureObject.set(cv.CAP_PROP_SHARPNESS, 2) == False:
+        raise Exception("Unable to set video capture parameter")
+    # if videoCaptureObject.set(cv.CAP_PROP_WB_TEMPERATURE,4600) == False:
     #    raise Exception("Unable to set video capture parameter")
-
-    #if videoCaptureObject.set(cv.CAP_PROP_CONTRAST ,100) == False:
-    #    raise Exception("Unable to set video capture parameter")
-
-    #if videoCaptureObject.set(cv.CAP_PROP_BRIGHTNESS ,100) == False:
+    # if videoCaptureObject.set(cv.CAP_PROP_AUTO_WB,0) == False:
     #    raise Exception("Unable to set video capture parameter")
 
     video_width = videoCaptureObject.get(cv.CAP_PROP_FRAME_WIDTH)
@@ -298,15 +316,15 @@ def OutputFolder() -> str:
     return path
 
 
-def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width, video_height):
+def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width, video_height, yuv):
     marlin_y = 0
     reel_z = 0
 
     return_value = False
 
     while True:
-        my_frame, centre = ProcessImage(
-            videoCaptureObject, centre_box, video_width, video_height, True)
+        my_frame, centre, _ = ProcessImage(
+            videoCaptureObject, centre_box, video_width, video_height, True, yuv)
 
         if centre == None:
             cv.putText(my_frame, "Sproket not detected",
@@ -316,9 +334,9 @@ def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width
                        (10, 100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv.LINE_AA)
 
         cv.putText(my_frame, "press f to nudge forward, b for back, j to jump forward quickly,",
-                    (10, 200), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 50), 2, cv.LINE_AA)
+                   (10, 200), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 50), 2, cv.LINE_AA)
         cv.putText(my_frame, "r to rewind spool (1 revolution), ESC to quit",
-                    (10, 230), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 50), 2, cv.LINE_AA)
+                   (10, 230), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 50), 2, cv.LINE_AA)
 
         cv.imshow('RawVideo', my_frame)
 
@@ -346,27 +364,75 @@ def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width
             MoveFilm(marlin, marlin_y, 500)
 
         if k == ord('r'):
-            #Rewind tape reel
-            reel_z-=360
-            MoveReel(marlin,reel_z, 15000, False)
+            # Rewind tape reel
+            reel_z -= 360
+            MoveReel(marlin, reel_z, 15000, False)
 
     return return_value
 
 # Generate timecode based on total number of frames
-def timecode(n:int) -> str:
+
+
+def timecode(n: int) -> str:
     frames = int(n % 18)
     seconds = timedelta(seconds=int((n - frames) / 18))
     return "{0}.{1}".format(seconds, frames)
 
+
+def determineStartingFrameNumber(path: str, ext: str) -> int:
+    existing_files = sorted(glob.glob(os.path.join(
+        path, "frame_????????."+ext)), reverse=True)
+
+    if len(existing_files) > 0:
+        return 1+int(os.path.basename(existing_files[0]).split('.')[0][6:])
+
+    return 0
+
+def calculateAngleForSpoolTakeUp(inner_diameter_spool: float, frame_height: float, film_thickness: float, frames_on_spool: int, new_frames_to_spool: int) -> float:
+    '''Calculate the angle to wind the take up spool forward based on
+    known number of frames already on the spool and the amount of frames we want to add.
+     May return more than 1 full revolution of the wheel (for example 650 degrees)'''
+    r = inner_diameter_spool/2
+    existing_tape_length = frame_height*frames_on_spool
+    spool_radius = math.sqrt(existing_tape_length *
+                             film_thickness / math.pi + r**2)
+    circumfrence = 2*math.pi * spool_radius
+    arc_length = new_frames_to_spool * frame_height
+    angle = arc_length/circumfrence*360
+    # print("spool_radius",spool_radius,"circumfrence",circumfrence,"degrees",angle,"arc_length",arc_length)
+    return angle
+
 def main():
     #print( cv.__version__ )
 
-    path = OutputFolder()
-    videoCaptureObject, video_width, video_height = ConfigureCamera()
+    # Super8 film dimension (in mm).  The image is vertical on the reel
+    # so the reel is 8mm wide and the frame is frame_width inside this.
+    FRAME_WIDTH_MM = 5.79
+    FRAME_HEIGHT_MM = 4.01
+    FILM_THICKNESS_MM = 0.150
+    INNER_DIAMETER_OF_TAKE_UP_SPOOL_MM = 32.0
 
     # Constants (sort of)
     NUDGE_FEED_RATE = 1000
-    STANDARD_FEED_RATE = 10000
+    STANDARD_FEED_RATE = 12000
+
+    # Number of PIXELS to remove from the vertical alignment of the output image
+    VERTICAL_OUTPUT_OFFSET = 75
+
+    # Capture raw YUV data from the camera (if possible)
+    YUV_FORMAT = True
+
+    path = OutputFolder()
+    starting_frame_number = determineStartingFrameNumber(path, "png")
+    print("Starting at frame number ", starting_frame_number)
+
+    # Calculate the radius of the tape on the take up spool
+
+    # Open the camera
+    videoCaptureObject, video_width, video_height = ConfigureCamera(
+        1, YUV_FORMAT, 1280, 720)
+
+    print("Camera configured for resolution ", video_width, "x", video_height)
 
     marlin = ConnectToMarlin()
 
@@ -376,18 +442,20 @@ def main():
 
     # Default
     #centre_box = [130, 0, 50, 40]
-
     centre_box = [150, 0, 50, 40]
-
+    # Ensure centre_box is in the centre of the video resolution/image size
     centre_box[1] = int(video_height/2-centre_box[3]/2)
 
-    if StartupAlignment(marlin, videoCaptureObject, centre_box, video_width, video_height) == True:
-
+    if StartupAlignment(marlin, videoCaptureObject, centre_box, video_width, video_height, YUV_FORMAT) == True:
         # Crude FPS calculation
         time_start = datetime.now()
 
         # Total number of images stored as a unique frame
-        frame_number = 0
+        frame_number = starting_frame_number
+
+        frames_already_on_spool = frame_number
+        frames_to_add_to_spool = 0
+
         # Position on film reel (in marlin Y units)
         marlin_y = 0.0
         # Default space (in marlin Y units) between frames on the reel
@@ -404,16 +472,21 @@ def main():
 
         # Output video size is larger than the capture size to cope with vertical image stabilization
         # these images will need to be further processed to make valid video files
-        output_video_frame_size = (int(video_height+100), int(video_width+100), 3)
+        output_video_frame_size = (
+            int(video_height+256), int(video_width+256), 3)
 
         try:
-            micro_adjustment_steps=0
+            micro_adjustment_steps = 0
 
             while True:
+                if frames_to_add_to_spool>10:
+                    print("Take up spool angle=",calculateAngleForSpoolTakeUp(INNER_DIAMETER_OF_TAKE_UP_SPOOL_MM,FRAME_HEIGHT_MM, FILM_THICKNESS_MM, frames_already_on_spool, frames_to_add_to_spool))
+                    frames_already_on_spool+=frames_to_add_to_spool
+                    frames_to_add_to_spool=0
 
-                if micro_adjustment_steps>25:
-                    #Emergency manual mode as too many small adjustments made (save wear on film)
-                    manual_control=True
+                if micro_adjustment_steps > 25:
+                    print("Emergency manual mode as too many small adjustments made")
+                    manual_control = True
 
                 # Check keyboard
                 k = cv.waitKey(1) & 0xFF
@@ -421,12 +494,18 @@ def main():
                 if k == 27:    # Esc key to stop/abort
                     break
 
+                # Enable manual control (pauses capture)
+                if k == ord('m') and manual_control == False:
+                    manual_control = True
+
                 if manual_control == True:
                     # Space
                     if k == 32:
                         print("Manual control ended")
                         manual_control = False
-                        # Reset FPS counter
+                        # FPS counter will be screwed up by manual pause
+                        # reset the time and counts here
+                        starting_frame_number = frame_number
                         time_start = datetime.now()
 
                     # Manual reel control (for when sproket is not detected)
@@ -444,14 +523,16 @@ def main():
                 # Sometimes OpenCV doesn't detect centre in a particular frame, so try up to 10 times with new
                 # camera images before giving up...
                 for n in range(0, 10):
-                    my_frame, centre = ProcessImage(
-                        videoCaptureObject, centre_box, video_width, video_height, True)
+                    my_frame, centre, _ = ProcessImage(
+                        videoCaptureObject, centre_box, video_width, video_height, True, YUV_FORMAT)
                     if centre != None:
                         break
 
                 if frame_number > 0:
-                    fps = frame_number / \
+                    fps = (frame_number-starting_frame_number) / \
                         (datetime.now()-time_start).total_seconds()
+                    cv.putText(my_frame, "Frames {0}".format(
+                        frame_number-starting_frame_number), (0, 130), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv.LINE_AA)
                     cv.putText(my_frame, "Capture FPS {0:.2f}".format(
                         fps), (0, 150), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv.LINE_AA)
 
@@ -464,7 +545,8 @@ def main():
                                cv.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 2, cv.LINE_AA)
 
                 # Display the time on screen, just to prove image is updating
-                cv.putText(my_frame, datetime.now().strftime("%X"), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv.LINE_AA)
+                cv.putText(my_frame, datetime.now().strftime(
+                    "%X"), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv.LINE_AA)
 
                 cv.imshow('RawVideo', my_frame)
 
@@ -484,24 +566,26 @@ def main():
                     #print("Advance until sproket in centre frame")
 
                     # How far off are we?
-                    diff_pixels = abs(video_height/2 - centre[1])
+                    diff_pixels = abs(int(video_height/2 - centre[1]))
 
                     # As a precaution, limit the total number of small adjustments made
                     # per frame, to avoid going in endless loops and damaging the reel
-                    micro_adjustment_steps+=1
+                    micro_adjustment_steps += 1
+
+                    # We could probably do something clever here and work out a single
+                    # jump to move forward/backwards depending on distance between centre line and sproket
+                    # however with a lop sided rubber band pulley, its all over the place!
 
                     # sproket if below centre line, move reel up
-                    if centre[1] > video_height/2:                        
-                        print("FORWARD!", marlin_y, "diff pixels=", diff_pixels)
-
-                        if diff_pixels>150:
-                            marlin_y += 3
-                        else:
-                            marlin_y += 1.5
+                    if centre[1] > video_height/2:
+                        print("FORWARD!", marlin_y,
+                              "diff pixels=", diff_pixels)
+                        marlin_y += 1.5
                     else:
                         # sproket if above centre line, move reel down (need to be careful about reverse feeding film reel into gate)
                         # move slowly/small steps
-                        #print("REVERSE!", marlin_y, "diff pixels=", diff_pixels)
+                        print("REVERSE!", marlin_y,
+                              "diff pixels=", diff_pixels)
                         # Fixed step distance for reverse
                         marlin_y -= 0.5
 
@@ -512,7 +596,8 @@ def main():
 
                 # Take a fresh photo now the motion has stopped, ensure the centre is calculated...
                 for n in range(0, 10):
-                    freeze_frame, centre = ProcessImage(videoCaptureObject, centre_box, video_width, video_height, False)
+                    freeze_frame, centre, sproket_box = ProcessImage(
+                        videoCaptureObject, centre_box, video_width, video_height, False, YUV_FORMAT)
                     if centre != None:
                         break
 
@@ -521,104 +606,114 @@ def main():
                     manual_control = True
                     continue
 
-                print("Found frame {0} at position {1} with sproket centre {2}".format(
-                    frame_number, marlin_y, centre))
-
                 # Double check the sproket is still in the correct place...
-                if pointInRect(centre, centre_box):
-                    # try:
+                if pointInRect(centre, centre_box) == False:
+                    print(
+                        "Freeze frame centre point outside bounds - trying to align again!")
+                    continue
 
-                    # Create blank (black) image for output at FULL HD res - 1920x1080
-                    output_image = np.zeros(output_video_frame_size, np.uint8)
-                    output_image_height, output_image_width = output_image.shape[:2]
-                    #print("output_image",output_image_height, output_image_width)
+                # The Super8 frame is VERTICALLY aligned in the output image, horizontal alignment
+                # is left as a secondary phase in picture correction (along with colour alignment, scratch removal etc.)
 
-                    #print("crop_img dims", crop_img.shape[:2])
-                    h, w = freeze_frame.shape[:2]
-                    # print("freeze_frame",h,w)
+                # Determine lowest Y value from the sproket rectangle, use that to vertically centre the frame
+                sproket_y = sorted(
+                    sproket_box, key=lambda y: y[1], reverse=False)[0]
 
-                    #crop_img = freeze_frame[y:y+h, x:x+w].copy()
-                    # Put the smaller image inside our output_image, but align it on its centre line
+                print("Found frame {0} at position {1} with sproket centre {2}, Y of sproket {3}".format(
+                    frame_number, marlin_y, centre, sproket_y[1]))
+                # print(sproket_box,sproket_y)
 
-                    # Horizontal centre line
-                    x = int(output_image_width/2) - int(w/2)
+                # Create blank (black) image for output at FULL HD res - 1920x1080
+                output_image = np.zeros(output_video_frame_size, np.uint8)
+                output_image_height, output_image_width = output_image.shape[:2]
+                #print("output_image",output_image_height, output_image_width)
 
-                    # Vertically centre smaller image inside larger one
-                    y = int(output_image_height/2 - h/2)
+                #print("crop_img dims", crop_img.shape[:2])
+                h, w = freeze_frame.shape[:2]
+                # print("freeze_frame",h,w)
 
-                    # Offset for vertical sproket alignment based on OpenCV
-                    y += int(h/2 - centre[1])
-                    y2 = int(y+h)
-                    x2 = int(x+w)
+                #crop_img = freeze_frame[y:y+h, x:x+w].copy()
+                # Put the smaller image inside our output_image, but align it on its centre line
 
-                    # Vertical centre line
-                    print(y, y2, x, x2)
-                    output_image[y:y2, x:x2] = freeze_frame
+                # Horizontal centre line
+                x = int(output_image_width/2) - int(w/2)
 
-                    # Debug output, mark image with frame number
-                    cv.putText(output_image, "{:08d}".format(
-                        frame_number), (0, 50), cv.FONT_HERSHEY_SIMPLEX, 0.4, (150, 150, 150), 2, cv.LINE_AA)
+                # Vertically centre smaller image inside larger one
+                y = int(output_image_height/2 - h/2)
 
-                    # Generate a video timecode (H:M:S:FRAMES)
+                # Use the top Y value for the sproket, as this doesn't appear to bound around as much as the centre point (affected by height)
+                y += int(h/2 - sproket_y[1])
+                y -= VERTICAL_OUTPUT_OFFSET
 
-                    cv.putText(output_image, timecode(frame_number), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2, cv.LINE_AA)
+                # Offset for vertical sproket alignment based on OpenCV detection
+                #y += int(h/2 - centre[1])
 
-                    filename = os.path.join( path, "frame_{:08d}.png".format(frame_number))
-                    frame_number += 1
+                y2 = int(y+h)
+                x2 = int(x+w)
 
-                    # DEBUG MASK FOR OUTPUT IMAGES
-                    output_mask = np.zeros(output_image.shape[:2], dtype="uint8")
-                    #top-left corner and bottom-right corner 
-                    cv.rectangle(output_mask, (327,96), (1230,720), 255, -1)
-                    output_image = cv.bitwise_and(output_image, output_image, mask=output_mask)
+                # Vertical centre line
+                # print(y, y2, x, x2)
+                output_image[y:y2, x:x2] = freeze_frame
 
-                    # Save frame to disk, use lower compression to save CPU time (not image quality png = lossless)
-                    cv.imwrite(filename, output_image, [
-                               cv.IMWRITE_PNG_COMPRESSION, 2])
+                # Debug output, mark image with frame number
+                cv.putText(output_image, "{:08d}".format(
+                    frame_number), (0, 50), cv.FONT_HERSHEY_SIMPLEX, 0.4, (150, 150, 150), 2, cv.LINE_AA)
 
+                # Generate a video timecode (H:M:S:FRAMES)
+                cv.putText(output_image, timecode(frame_number), (0, 100),
+                           cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2, cv.LINE_AA)
 
-                    # Show it on screen
-                    #cv.imshow('output', output_image)
+                filename = os.path.join(
+                    path, "frame_{:08d}.png".format(frame_number))
+                frame_number += 1
 
-                    # Determine the average gap between captured frames
-                    steps = []
-                    for n in range(0, len(last_y_list)-1, 2):
-                        steps.append(last_y_list[n+1]-last_y_list[n])
+                # DEBUG MASK FOR OUTPUT IMAGES
+                #output_mask = np.zeros(output_image.shape[:2], dtype="uint8")
+                #cv.rectangle(output_mask, (327,96), (1230,720), 255, -1)
+                #output_image = cv.bitwise_and(output_image, output_image, mask=output_mask)
 
-                    if len(steps) > 0:
-                        total_steps = 0
-                        for n in steps:
-                            total_steps += n
+                # Save frame to disk, use lower compression to save CPU time (not image quality png = lossless)
+                cv.imwrite(filename, output_image, [
+                    cv.IMWRITE_PNG_COMPRESSION, 2])
 
-                        average_spacing = round(total_steps/len(steps), 1)
-                        previous_frame_y = last_y_list[len(last_y_list)-1]
-                        last_frame_spacing = round(
-                            marlin_y-previous_frame_y, 2)
+                # Show it on screen
+                #cv.imshow('output', output_image)
+                frames_to_add_to_spool+=1
 
-                        print("Average Marlin steps between frames",
-                              average_spacing, ", last frame=", last_frame_spacing)
+                # Determine the average gap between captured frames
+                steps = []
+                for n in range(0, len(last_y_list)-1, 2):
+                    steps.append(last_y_list[n+1]-last_y_list[n])
 
-                        if last_frame_spacing > (average_spacing*1.5):
-                            print("Likely dropped frame")
-                            # Clear average out after a dropped frame :-(
-                            last_y_list = []
+                if len(steps) > 0:
+                    total_steps = 0
+                    for n in steps:
+                        total_steps += n
 
-                    # Now add on our new reading
-                    last_y_list.append(marlin_y)
-                    if len(last_y_list) > 20:
-                        # Keep list at 20 items, remove first
-                        last_y_list.pop(0)
+                    average_spacing = round(total_steps/len(steps), 1)
+                    previous_frame_y = last_y_list[len(last_y_list)-1]
+                    last_frame_spacing = round(
+                        marlin_y-previous_frame_y, 2)
 
-                    # except BaseException as CropErr:
-                    #    cv.imshow('output', freeze_frame)
-                    #    print(f"Unexpected {CropErr=}, {type(CropErr)=}")
+                    print("Average Marlin steps between frames",
+                          average_spacing, ", last frame=", last_frame_spacing)
 
-                    # Now move film forward past the sproket hole so we don't take the same frame twice
-                    # do this at a faster speed, to improve captured frames per second
-                    marlin_y += frame_spacing
-                    MoveFilm(marlin, marlin_y, STANDARD_FEED_RATE)
+                    if last_frame_spacing > (average_spacing*1.5):
+                        print("Likely dropped frame")
+                        # Clear average out after a dropped frame :-(
+                        last_y_list = []
 
-                    micro_adjustment_steps=0
+                # Now add on our new reading
+                last_y_list.append(marlin_y)
+                if len(last_y_list) > 20:
+                    # Keep list at 20 items, remove first
+                    last_y_list.pop(0)
+
+                # Now move film forward past the sproket hole so we don't take the same frame twice
+                # do this at a faster speed, to improve captured frames per second
+                marlin_y += frame_spacing
+                MoveFilm(marlin, marlin_y, STANDARD_FEED_RATE)
+                micro_adjustment_steps = 0
 
         except BaseException as err:
             print(f"Unexpected {err=}, {type(err)=}")
