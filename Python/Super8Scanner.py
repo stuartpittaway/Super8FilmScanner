@@ -230,9 +230,9 @@ def ConnectToMarlin():
     # M106 - Fan On (LED LIGHT)
     # G92 - Set Position
     # M201 - Set Print Max Acceleration (off)
-    # M18 - Disable steppers (after 60 seconds)
+    # M18 - Disable steppers (after 15 seconds)
     SendMultipleMarlinCmd(
-        marlin, ["M502", "G21", "M211 S0", "G90", "M106", "G92 X0 Y0 Z0", "M201 Y0", "M18 S30", "M203 X1000.00 Y1000.00 Z2500.00"])
+        marlin, ["M502", "G21", "M211 S0", "G90", "M106", "G92 X0 Y0 Z0", "M201 Y0", "M18 S15", "M203 X1000.00 Y1000.00 Z5000.00"])
 
     # M92 - Set Axis Steps-per-unit
     # Just a fake number to keep things uniform, 10 steps
@@ -366,7 +366,7 @@ def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width
         if k == ord('r'):
             # Rewind tape reel
             reel_z -= 360
-            MoveReel(marlin, reel_z, 15000, False)
+            MoveReel(marlin, reel_z, 20000, False)
 
     return return_value
 
@@ -463,6 +463,9 @@ def main():
         # List of positions (marlin y) where last frames were captured/found
         last_y_list = []
 
+        # Current Z (take up spool) position
+        reel_z=0
+
         # Reset Marlin to be zero (homed!!)
         SendMarlinCmd(marlin, "G92 X0 Y0 Z0")
         # Disable X and Z steppers, so take up spool rotates freely
@@ -479,10 +482,15 @@ def main():
             micro_adjustment_steps = 0
 
             while True:
-                if frames_to_add_to_spool>10:
-                    print("Take up spool angle=",calculateAngleForSpoolTakeUp(INNER_DIAMETER_OF_TAKE_UP_SPOOL_MM,FRAME_HEIGHT_MM, FILM_THICKNESS_MM, frames_already_on_spool, frames_to_add_to_spool))
-                    frames_already_on_spool+=frames_to_add_to_spool
-                    frames_to_add_to_spool=0
+                if frames_to_add_to_spool>12:
+                    # We have processed 12 frames, but only wind 10 onto the spool to leave some slack (2 frames worth)
+                    angle=calculateAngleForSpoolTakeUp(INNER_DIAMETER_OF_TAKE_UP_SPOOL_MM,FRAME_HEIGHT_MM, FILM_THICKNESS_MM, frames_already_on_spool, 10)
+                    print("Take up spool angle=",angle)                    
+                    reel_z-=angle
+                    MoveReel(marlin, reel_z, 5000, False)
+                    # Switch off stepper                    
+                    frames_already_on_spool+=10
+                    frames_to_add_to_spool-=10
 
                 if micro_adjustment_steps > 25:
                     print("Emergency manual mode as too many small adjustments made")
