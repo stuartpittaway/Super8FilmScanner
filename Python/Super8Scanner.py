@@ -95,7 +95,6 @@ def SendMultipleMarlinCmd(MarlinSerialPort: Serial, cmds: list) -> bool:
 def PrepareImageForOutput(freeze_frame, frame_number:int, output_video_frame_size, y_offset:int, vertical_offset:int, exposure:float):
     print("Prepare Image", frame_number, y_offset, exposure)
 
-
     # Create blank (black) image for output
     output_image = np.zeros(output_video_frame_size, np.uint8)
     output_image_height, output_image_width = output_image.shape[:2]
@@ -141,16 +140,19 @@ def PrepareImageForOutput(freeze_frame, frame_number:int, output_video_frame_siz
 
     return output_image
 
-
-def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_height: int, draw_rects=True, yuv=True, exposure_level=-8.0, vertical_offset=0):
-    # Contour of detected sproket needs to be this large to be classed as valid (area)
-    AREA_OF_SPROKET = 6500
+def SetExposure(videoCaptureObject,exposure_level=-8.0):
 
     if videoCaptureObject.set(cv.CAP_PROP_EXPOSURE, exposure_level) == False:
         raise Exception("Unable to set video capture exposure")
 
     #if videoCaptureObject.get(cv.CAP_PROP_EXPOSURE)!=exposure_level:
     #    print("Setting video capture exposure failed")
+
+def ProcessImage(videoCaptureObject, centre_box: list, video_width: int, video_height: int, draw_rects=True, yuv=True, exposure_level=-8.0):
+    # Contour of detected sproket needs to be this large to be classed as valid (area)
+    AREA_OF_SPROKET = 6500
+
+    SetExposure(videoCaptureObject, exposure_level)
 
     # Take a picture, in raw YUV mode (avoid MJPEG compression/artifacts)
     cap, frame = videoCaptureObject.read()
@@ -265,6 +267,14 @@ def MoveReel(marlin: Serial, z: float, feed_rate: int, wait_for_completion=True)
         # Wait for move complete
         SendMarlinCmd(marlin, "M400")
 
+def SetMarlinLight(marlin: Serial, level:int=255):
+    #print("Light",level)
+    if level>0:
+        # M106 Light (fan) On @ PWM level S
+        SendMarlinCmd(marlin, "M106 S{0}".format(level))
+    else:
+        # M107 Light Off
+        SendMarlinCmd(marlin, "M107")
 
 def ConnectToMarlin():
     #ports = list(port_list.comports())
@@ -289,7 +299,9 @@ def ConnectToMarlin():
     # M201 - Set Print Max Acceleration (off)
     # M18 - Disable steppers (after 15 seconds)
     SendMultipleMarlinCmd(
-        marlin, ["M502", "G21", "M211 S0", "G90", "M106", "G92 X0 Y0 Z0", "M201 Y0", "M18 S15", "M203 X1000.00 Y1000.00 Z5000.00"])
+        marlin, ["M502", "G21", "M211 S0", "G90", "G92 X0 Y0 Z0", "M201 Y0", "M18 S15", "M203 X1000.00 Y1000.00 Z5000.00"])
+
+    SetMarlinLight(marlin,255)
 
     # M92 - Set Axis Steps-per-unit
     # Just a fake number to keep things uniform, 10 steps
@@ -304,7 +316,8 @@ def ConnectToMarlin():
 def DisconnectFromMarlin(serial_port: Serial):
     # M107 Light Off
     # M84 Steppers Off
-    SendMultipleMarlinCmd(serial_port, ["M107", "M84"])
+    SetMarlinLight(serial_port,0)
+    SendMultipleMarlinCmd(serial_port, ["M84"])
     serial_port.close()
 
 
@@ -334,8 +347,8 @@ def ConfigureCamera(device_number: int, yuv: bool, width: int, height: int):
         if decode_fourcc(videoCaptureObject.get(cv.CAP_PROP_FOURCC)) != "NV12":
             raise Exception("Camera not in raw YUV4:2:0 format")
 
-    if videoCaptureObject.set(cv.CAP_PROP_EXPOSURE, -8) == False:
-        raise Exception("Unable to set video capture parameter")
+    SetExposure(videoCaptureObject)
+
     if videoCaptureObject.set(cv.CAP_PROP_BRIGHTNESS, 0) == False:
         raise Exception("Unable to set video capture parameter")
     if videoCaptureObject.set(cv.CAP_PROP_CONTRAST, 3) == False:
@@ -364,8 +377,7 @@ def ConfigureCamera(device_number: int, yuv: bool, width: int, height: int):
 
 
 def OutputFolder(exposures:list) -> str:
-    # Create folders for the different EV exposure levels
-    
+    # Create folders for the different EV exposure levels    
     for e in exposures:
         path = os.path.join(os.getcwd(), "Capture{0}".format(e))
         if not os.path.exists(path):
@@ -380,20 +392,21 @@ def OutputFolder(exposures:list) -> str:
     return path
 
 
-def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width, video_height, yuv, exposures):
+def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width, video_height, yuv):
     marlin_y = 0
     reel_z = 0
 
     return_value = False
 
     while True:
-        my_frame, centre, _ = ProcessImage(videoCaptureObject, centre_box, video_width, video_height, True, yuv, exposures[0], 0)
+        SetExposure(videoCaptureObject)
+        my_frame, centre, _ = ProcessImage(videoCaptureObject, centre_box, video_width, video_height, True, yuv)
 
         if centre == None:
-            cv.putText(my_frame, "Sproket not detected",
+            cv.putText(my_frame, "Sproket hole not detected",
                        (10, 100), cv.FONT_HERSHEY_SIMPLEX, 1.25, (0, 0, 255), 2, cv.LINE_AA)
         else:
-            cv.putText(my_frame, "Sproket detected, press SPACE to start scanning",
+            cv.putText(my_frame, "Sproket hole detected, press SPACE to start scanning",
                        (10, 100), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv.LINE_AA)
 
         cv.putText(my_frame, "press f to nudge forward, b for back, j to jump forward quickly,",
@@ -401,7 +414,7 @@ def StartupAlignment(marlin: Serial, videoCaptureObject, centre_box, video_width
         cv.putText(my_frame, "r to rewind spool (1 revolution), ESC to quit",
                    (10, 230), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 50), 2, cv.LINE_AA)
 
-        cv.imshow('RawVideo', my_frame)
+        cv.imshow('RawVideo', my_frame)     
 
         # Check keyboard
         k = cv.waitKey(10) & 0xFF
@@ -477,8 +490,8 @@ def main():
 
     FRAMES_TO_WAIT_UNTIL_SPOOLING = 6
 
-    # One or several exposures to take images with
-    CAMERA_EXPOSURE = [-8.0,-4.0,-10.0]
+    # One or several exposures to take images with (for USB camera, only 1 really works)
+    CAMERA_EXPOSURE = [-8.0]
 
     # Constants (sort of)
     NUDGE_FEED_RATE = 1000
@@ -513,7 +526,7 @@ def main():
     # Ensure centre_box is in the centre of the video resolution/image size
     centre_box[1] = int(video_height/2-centre_box[3]/2)
 
-    if StartupAlignment(marlin, videoCaptureObject, centre_box, video_width, video_height, YUV_FORMAT, CAMERA_EXPOSURE) == True:
+    if StartupAlignment(marlin, videoCaptureObject, centre_box, video_width, video_height, YUV_FORMAT) == True:
         # Crude FPS calculation
         time_start = datetime.now()
 
@@ -555,7 +568,7 @@ def main():
                     #print("Take up spool angle=",angle)                    
                     reel_z-=angle
                     #Move the stepper spool
-                    MoveReel(marlin, reel_z, 6000, False)
+                    MoveReel(marlin, reel_z, 8000, False)
                     frames_already_on_spool+=FRAMES_TO_WAIT_UNTIL_SPOOLING
                     frames_to_add_to_spool-=FRAMES_TO_WAIT_UNTIL_SPOOLING
 
@@ -592,15 +605,16 @@ def main():
                         marlin_y -= 1
                         MoveFilm(marlin, marlin_y, 500)
 
-                # Centre returns the middle of the sproket (if visible)
+                # Centre returns the middle of the sproket hole (if visible)
                 # Frame is the picture (already pre-processed)
 
                 # Sometimes OpenCV doesn't detect centre in a particular frame, so try up to 10 times with new
                 # camera images before giving up...
                 for n in range(0, 10):
-                    my_frame, centre, _ = ProcessImage(videoCaptureObject, centre_box, video_width, video_height, True, YUV_FORMAT, CAMERA_EXPOSURE[0], VERTICAL_OUTPUT_OFFSET)
+                    my_frame, centre, _ = ProcessImage(videoCaptureObject, centre_box, video_width, video_height, True, YUV_FORMAT, CAMERA_EXPOSURE[0])
                     if centre != None:
                         break
+                    print("Regrab image, no centre")
 
                 if frame_number > 0:
                     fps = (frame_number-starting_frame_number) / \
@@ -615,17 +629,16 @@ def main():
                                (0, 300), cv.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv.LINE_AA)
 
                 if centre == None:
-                    cv.putText(my_frame, "SPROKET LOST", (0, 200),
+                    cv.putText(my_frame, "SPROKET HOLE LOST", (0, 200),
                                cv.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 2, cv.LINE_AA)
 
                 # Display the time on screen, just to prove image is updating
-                cv.putText(my_frame, datetime.now().strftime(
-                    "%X"), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv.LINE_AA)
+                cv.putText(my_frame, datetime.now().strftime("%X"), (0, 100), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv.LINE_AA)
 
                 cv.imshow('RawVideo', my_frame)
 
                 if centre == None:
-                    # We don't have a WHOLE sproket visible on the photo (may be partial ones)
+                    # We don't have a WHOLE sproket hole visible on the photo (may be partial ones)
                     # Stop and allow user/manual alignment
                     manual_control = True
                     continue
@@ -635,9 +648,9 @@ def main():
                     continue
 
                 if pointInRect(centre, centre_box) == False:
-                    # We have a complete sproket visible, but not in the centre of the frame...
+                    # We have a complete sproket hole visible, but not in the centre of the frame...
                     # Nudge forward until we find the sproket hole centre
-                    #print("Advance until sproket in centre frame")
+                    #print("Advance until sproket hole in centre frame")
 
                     # How far off are we?
                     diff_pixels = abs(int(video_height/2 - centre[1]))
@@ -647,10 +660,10 @@ def main():
                     micro_adjustment_steps += 1
 
                     # We could probably do something clever here and work out a single
-                    # jump to move forward/backwards depending on distance between centre line and sproket
+                    # jump to move forward/backwards depending on distance between centre line and sproket hole
                     # however with a lop sided rubber band pulley, its all over the place!
 
-                    # sproket if below centre line, move reel up
+                    # sproket hole is below centre line, move reel up
                     if centre[1] > video_height/2:
                         print("FORWARD!", marlin_y,
                               "diff pixels=", diff_pixels)
@@ -669,19 +682,17 @@ def main():
 
                 try:
                     # We have just found our sproket in the centre of the image
-                    cmd_line=[]
-                    cmd_line.append("e:\source\enblend-4.2\enfuse.exe")
-                    cmd_line.append("-l")
-                    cmd_line.append("8")
-                    cmd_line.append("-o")
-                    cmd_line.append(os.path.join(path, "frame_{:08d}.png".format(frame_number)))
+
+                    index=0
+                    thumbnail_collection_image = np.zeros((int(video_height*0.25 * len(CAMERA_EXPOSURE)),int(video_width*0.25),3), np.uint8)                    
 
                     for my_exposure in CAMERA_EXPOSURE:
                         # Take a fresh photo now the motion has stopped, ensure the centre is calculated...
                         for n in range(0, 10):
                             #Delay to let the film/camera settle before a new image
-                            cv.waitKey(50)
-                            freeze_frame, centre, sproket_box = ProcessImage(videoCaptureObject, centre_box, video_width, video_height, False, YUV_FORMAT,my_exposure, VERTICAL_OUTPUT_OFFSET)
+                            #SetExposure(videoCaptureObject,my_exposure)
+                            #cv.waitKey(500)
+                            freeze_frame, centre, sproket_box = ProcessImage(videoCaptureObject, centre_box, video_width, video_height, False, YUV_FORMAT, my_exposure)
                             # Exit loop if we have a valid picture
                             if centre != None:
                                 break
@@ -700,16 +711,26 @@ def main():
                             #continue
                             raise Exception("Freeze frame outside bounds")
 
+                        # Generate thumbnail of the different exposures and make a vertical strip of them
+                        thumbnail=cv.resize(freeze_frame, (0,0), fx=0.25, fy=0.25)
+                        thumnail_height, thumnail_width = thumbnail.shape[:2]
+                        #y:y2, x:x2
+                        y1=thumnail_height*index
+                        y2=y1+thumnail_height
+                        thumbnail_collection_image[y1:y2, 0:thumnail_width]=thumbnail
+                        cv.imshow("Exposures",thumbnail_collection_image)
+                        index+=1
+                        cv.waitKey(1)
+
                         # The Super8 frame is VERTICALLY aligned in the output image, horizontal alignment
                         # is left as a secondary phase in picture correction (along with colour alignment, scratch removal etc.)
 
                         # Determine lowest Y value from the sproket rectangle, use that to vertically centre the frame
                         sproket_y = sorted(sproket_box, key=lambda y: y[1], reverse=False)[0]
-                        print("Found frame {0} at position {1} with sproket centre {2}, Y of sproket {3}, exposure {4}".format(frame_number, marlin_y, centre, sproket_y[1],my_exposure))
+                        print("Found frame {0} at position {1} with Y of sproket hole {2}, exposure {3}".format(frame_number, marlin_y, sproket_y[1], my_exposure))
 
                         output_image=PrepareImageForOutput(freeze_frame, frame_number, output_video_frame_size, sproket_y[1], VERTICAL_OUTPUT_OFFSET, my_exposure)
                         filename = os.path.join(path+"{0}".format(my_exposure), "frame_{:08d}.png".format(frame_number))
-                        cmd_line.append(filename)
 
                         # DEBUG MASK FOR OUTPUT IMAGES
                         #output_mask = np.zeros(output_image.shape[:2], dtype="uint8")
@@ -737,10 +758,6 @@ def main():
                     #        filename = os.path.join(path+"{0}".format(my_exposure), "frame_{:08d}.png".format(frame_number))                       
                     #        if cv.imwrite(filename, output_image, [cv.IMWRITE_PNG_COMPRESSION, 2])==False:
                     #            raise IOError("Failed to save image")
-                    #        cmd_line.append(filename)
-
-                    # Now call ENFUSE
-                    subprocess.run(cmd_line)
 
                     # Move frame number on
                     frame_number += 1
