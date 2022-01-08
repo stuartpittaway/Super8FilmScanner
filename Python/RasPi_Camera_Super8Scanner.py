@@ -94,8 +94,13 @@ def SendMultipleMarlinCmd(MarlinSerialPort: serial.Serial, cmds: list) -> bool:
     return True
 
 
-def PrepareImageForOutput(freeze_frame, frame_number:int, output_video_frame_size, y_offset:int, vertical_offset:int, exposure:float):
-    print("Prepare Image", frame_number, y_offset, exposure)
+def PrepareImageForOutput(freeze_frame, frame_number:int, output_video_frame_size, y_offset:int):
+    """
+    Prepares a captured image for output doing a simple vertical alignment based on the y_offset
+    Returns the new image
+    """
+    #y_offset is the centre of sproket hole (Y)
+    print("Prepare Image", frame_number,"y_offset=", y_offset)
 
     # Create blank (black) image for output
     output_image = np.zeros(output_video_frame_size, np.uint8)
@@ -118,12 +123,7 @@ def PrepareImageForOutput(freeze_frame, frame_number:int, output_video_frame_siz
     # Vertically centre smaller image inside larger one
     y = int(output_image_height/2 - h/2)
 
-    # Use the top Y value for the sproket, as this doesn't appear to bound around as much as the centre point (affected by height)
     y += int(h/2 - y_offset)
-    y -= vertical_offset
-
-    # Offset for vertical sproket alignment based on OpenCV detection
-    #y += int(h/2 - centre[1])
     y2 = int(y+h)
     x2 = int(x+w)
 
@@ -132,13 +132,10 @@ def PrepareImageForOutput(freeze_frame, frame_number:int, output_video_frame_siz
     output_image[y:y2, x:x2] = freeze_frame
 
     # Debug output, mark image with frame number
-    cv.putText(output_image, "{:08d}".format(frame_number), (0, 50), cv.FONT_HERSHEY_SIMPLEX, 0.4, (150, 150, 150), 2, cv.LINE_AA)
-
+    cv.putText(output_image, "{:08d}".format(frame_number), (0, 50), cv.FONT_HERSHEY_SIMPLEX, 2, (150, 150, 150), 2, cv.LINE_AA)
     # Generate a video timecode (H:M:S:FRAMES)
-    cv.putText(output_image, timecode(frame_number), (0, 100),cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2, cv.LINE_AA)
-
-    # Generate a video timecode (H:M:S:FRAMES)
-    cv.putText(output_image, str(exposure), (0, 200),cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2, cv.LINE_AA)
+    cv.putText(output_image, timecode(frame_number), (0, 100),cv.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 2, cv.LINE_AA)
+    #cv.putText(output_image, str(exposure), (0, 200),cv.FONT_HERSHEY_SIMPLEX, 2, (255, 0, 0), 2, cv.LINE_AA)
 
     return output_image
 
@@ -169,7 +166,7 @@ def ProcessImage(centre_box: list, video_width: int, video_height: int, draw_rec
     start_time=time.perf_counter()
 
     # Contour of detected sproket needs to be this large to be classed as valid (area)
-    MIN_AREA_OF_SPROKET = 27500
+    MIN_AREA_OF_SPROKET = 27350
     MAX_AREA_OF_SPROKET = int(MIN_AREA_OF_SPROKET * 1.1)
 
     large_image,image_height, image_width=TakePicture(video_height,video_width)
@@ -474,7 +471,7 @@ def main():
     STANDARD_FEED_RATE = 12000
 
     # Number of PIXELS to remove from the vertical alignment of the output image
-    VERTICAL_OUTPUT_OFFSET = 75
+    #VERTICAL_OUTPUT_OFFSET = 50
 
     path = OutputFolder(CAMERA_EXPOSURE)
     starting_frame_number = determineStartingFrameNumber(path, "png")
@@ -529,7 +526,7 @@ def main():
         # Position on film reel (in marlin Y units)
         marlin_y = 0.0
         # Default space (in marlin Y units) between frames on the reel
-        frame_spacing = 19
+        frame_spacing = 18
         # List of positions (marlin y) where last frames were captured/found
         last_y_list = []
 
@@ -545,8 +542,8 @@ def main():
 
         # Output video size is larger than the capture size to cope with vertical image stabilization
         # these images will need to be further processed to make valid video files
-        output_video_frame_size = (
-            int(video_height+256), int(video_width+256), 3)
+        # The height allow the image to bounce up and down
+        output_video_frame_size = (int(image_height+centre_box[3]), int(image_width), 3)
 
         try:
             micro_adjustment_steps = 0
@@ -610,13 +607,13 @@ def main():
                     fps = (frame_number-starting_frame_number) / \
                         (datetime.now()-time_start).total_seconds()
                     cv.putText(my_frame, "Frames {0}".format(
-                        frame_number-starting_frame_number), (0, 130), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv.LINE_AA)
+                        frame_number-starting_frame_number), (0, 130), cv.FONT_HERSHEY_SIMPLEX, 3, (0, 255, 255), 2, cv.LINE_AA)
                     cv.putText(my_frame, "Capture FPS {0:.2f}".format(
-                        fps), (0, 150), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2, cv.LINE_AA)
+                        fps), (0, 150), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 3, cv.LINE_AA)
 
                 if manual_control == True:
                     cv.putText(my_frame, "Manual Control Active, keys f/b to align and SPACE to continue",
-                               (0, 300), cv.FONT_HERSHEY_SIMPLEX, 1.25, (255, 255, 255), 2, cv.LINE_AA)
+                               (0, 300), cv.FONT_HERSHEY_SIMPLEX, 6, (255, 255, 255), 2, cv.LINE_AA)
 
                 if centre == None:
                     cv.putText(my_frame, "SPROKET HOLE LOST", (0, 200),
@@ -679,9 +676,6 @@ def main():
                 try:
                     # We have just found our sproket in the centre of the image
 
-                    index=0
-                    thumbnail_collection_image = np.zeros((int(video_height*0.25 * len(CAMERA_EXPOSURE)),int(video_width*0.25),3), np.uint8)                    
-
                     for my_exposure in CAMERA_EXPOSURE:
                         # Take a fresh photo now the motion has stopped, ensure the centre is calculated...
                         for n in range(0, 10):
@@ -707,25 +701,19 @@ def main():
                             #continue
                             raise Exception("Freeze frame outside bounds")
 
-                        # Generate thumbnail of the different exposures and make a vertical strip of them
+                        # Generate thumbnail of the picture and show it
                         thumbnail=cv.resize(freeze_frame, (0,0), fx=0.25, fy=0.25)
                         thumnail_height, thumnail_width = thumbnail.shape[:2]
-                        #y:y2, x:x2
-                        y1=thumnail_height*index
-                        y2=y1+thumnail_height
-                        thumbnail_collection_image[y1:y2, 0:thumnail_width]=thumbnail
-                        cv.imshow("Exposures",thumbnail_collection_image)
-                        index+=1
+                        cv.imshow("Exposure",thumbnail)
                         cv.waitKey(1)
 
                         # The Super8 frame is VERTICALLY aligned in the output image, horizontal alignment
                         # is left as a secondary phase in picture correction (along with colour alignment, scratch removal etc.)
-
                         # Determine lowest Y value from the sproket rectangle, use that to vertically centre the frame
-                        sproket_y = sorted(sproket_box, key=lambda y: y[1], reverse=False)[0]
-                        print("Found frame {0} at position {1} with Y of sproket hole {2}, exposure {3}".format(frame_number, marlin_y, sproket_y[1], my_exposure))
-
-                        output_image=PrepareImageForOutput(freeze_frame, frame_number, output_video_frame_size, sproket_y[1], VERTICAL_OUTPUT_OFFSET, my_exposure)
+                        #sproket_y = sorted(sproket_box, key=lambda y: y[1], reverse=False)[0]
+                        #print("Found frame {0} at position {1} with Y of sproket hole {2}, exposure {3}".format(frame_number, marlin_y, sproket_y[1], my_exposure))
+                        
+                        output_image=PrepareImageForOutput(freeze_frame, frame_number, output_video_frame_size, centre[1])
                         filename = os.path.join(path+"{0}".format(my_exposure), "frame_{:08d}.png".format(frame_number))
 
                         # DEBUG MASK FOR OUTPUT IMAGES
