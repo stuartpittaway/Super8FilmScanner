@@ -142,6 +142,8 @@ def PrepareImageForOutput(freeze_frame, frame_number:int, output_video_frame_siz
 def TakeHighResPicture():
     global camera
 
+    start_time=time.perf_counter()
+
     video_width,video_height=configureHighResCamera()
 
     # Capture at the requested resolution in BGR format
@@ -151,6 +153,7 @@ def TakeHighResPicture():
     # Close it after the image
     camera.close()
 
+    print("High res image capture",time.perf_counter() - start_time)
     image_height, image_width = large_image.shape[:2]  
 
     # Now trim out the gate frame (plastic), by cropping the image
@@ -158,12 +161,12 @@ def TakeHighResPicture():
     # keep aspect ratio at 4:3
 
     # Use RATIO 0.09 rather than exact pixels to cater for different resolutions if needed
-    y1=int(image_width*0.09)
-    y2=image_height-y1
-    x1=int(y1/1.33)
-    x2=image_width-x1
-    large_image = large_image[y1:y2,x1:x2]
-    image_height, image_width = large_image.shape[:2]
+    #y1=int(image_width*0.06)
+    #y2=image_height-y1
+    #x1=int(y1/1.33)
+    #x2=image_width-x1
+    #large_image = large_image[y1:y2,x1:x2]
+    #image_height, image_width = large_image.shape[:2]
 
     return large_image,image_height, image_width
 
@@ -195,17 +198,17 @@ def TakePreviewPicture(video_width:int,video_height:int):
 
 def ProcessImage(centre_box: list, video_width: int, video_height: int, draw_rects=True, exposure_level=-8.0):
 
-    start_time=time.perf_counter()
+    #start_time=time.perf_counter()
 
     # Contour of detected sproket needs to be this large to be classed as valid (area)
-    MIN_AREA_OF_SPROKET = 3450
-    MAX_AREA_OF_SPROKET = int(MIN_AREA_OF_SPROKET * 1.1)
+    MIN_AREA_OF_SPROKET = 2780
+    MAX_AREA_OF_SPROKET = int(MIN_AREA_OF_SPROKET * 1.15)
 
     large_image,image_height, image_width=TakePreviewPicture(video_width,video_height)
    
-    print("Image capture",time.perf_counter() - start_time)
+    #print("Image capture",time.perf_counter() - start_time)
 
-    start_time=time.perf_counter()
+    #start_time=time.perf_counter()
 
     # SubType YUY2
     # Take a picture, in raw YUV mode (avoid MJPEG compression/artifacts)
@@ -249,8 +252,8 @@ def ProcessImage(centre_box: list, video_width: int, video_height: int, draw_rec
     #cv.imwrite("image_grey.jpg", imgGry)
 
     # Threshold to only keep the sproket data visible (which is now bright white)
-    _, threshold = cv.threshold(imgGry, 150, 255, cv.THRESH_BINARY)
-    #cv.imshow('threshold', cv.resize(threshold,(x2,int(image_height/4)) ))
+    _, threshold = cv.threshold(imgGry, 145, 255, cv.THRESH_BINARY)
+    #cv.imshow('threshold', threshold)
 
     #print("Step 2",time.perf_counter() - start_time)
 
@@ -294,15 +297,15 @@ def ProcessImage(centre_box: list, video_width: int, video_height: int, draw_rec
                 # Draw the rectangle
                 #cv.drawContours(large_image, [box], 0, colour, 8)
 
-            print(time.perf_counter() - start_time)
+            #print(time.perf_counter() - start_time)
             return large_image, centre, box
         else:
             print("Area is ",area)
             # pass
     else:
-        cv.putText(frame, "No contour", (0, 50), cv.FONT_HERSHEY_SIMPLEX, 10, (0, 255, 0), 2, cv.LINE_AA)
+        cv.putText(frame, "No contour", (0, 50), cv.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2, cv.LINE_AA)
 
-    print(time.perf_counter() - start_time)
+    #print(time.perf_counter() - start_time)
     return large_image, None, None
 
 def MoveFilm(marlin: serial.Serial, y: float, feed_rate: int):
@@ -376,8 +379,6 @@ def DisconnectFromMarlin(serial_port: serial.Serial):
 def decode_fourcc(v):
     v = int(v)
     return "".join([chr((v >> 8 * i) & 0xFF) for i in range(4)])
-
-
 
 
 def OutputFolder(exposures:list) -> str:
@@ -493,9 +494,10 @@ def configureHighResCamera():
         camera.close()
 
     #8Mpixel, aspect ratio 1.33 = 4:3
-    camera=picamera.PiCamera(resolution=(3296,2464),framerate = 10)
+    camera=picamera.PiCamera(resolution=(3840,2496),framerate = 30)
     camera.exposure_mode = 'auto'    
     camera.awb_mode='auto'
+    camera.meter_mode='backlit'
     #camera.resolution = (3296,2464)
     #camera.framerate = 10
     return camera.resolution[0],camera.resolution[1]
@@ -509,10 +511,11 @@ def configurePreviewCamera():
         camera.close()
 
     camera=picamera.PiCamera(resolution = (640,480),framerate=30)
-    camera.exposure_mode = 'auto'    
+    #camera.shutter_speed = 10000
+    camera.exposure_mode = 'auto'
+    #camera.iso = 1600
     camera.awb_mode='auto'
-    #camera.resolution = (640,480)
-    #camera.framerate = 30
+    camera.meter_mode='backlit'
     return camera.resolution[0],camera.resolution[1]
 
 
@@ -576,7 +579,7 @@ def main():
     # Default
     #centre_box = [130, 0, 50, 40]
     # X,Y, W, H
-    centre_box = [30, 0, 40, 40]
+    centre_box = [25, 0, 32, 40]
     # Ensure centre_box is in the centre of the video resolution/image size
     centre_box[1] = int(image_height/2-centre_box[3]/2)
 
@@ -593,7 +596,7 @@ def main():
         # Position on film reel (in marlin Y units)
         marlin_y = 0.0
         # Default space (in marlin Y units) between frames on the reel
-        frame_spacing = 18
+        frame_spacing = 20
         # List of positions (marlin y) where last frames were captured/found
         last_y_list = []
 
@@ -740,6 +743,9 @@ def main():
 
                     freeze_frame,highres_image_height,highres_image_width=TakeHighResPicture()
 
+                    # Reduce file size a little
+                    freeze_frame = cv.resize(freeze_frame,(0,0), fx=0.8, fy=0.8, interpolation = cv.INTER_AREA)
+
                     # Mirror - sproket is now on left of image
                     freeze_frame = cv.flip(freeze_frame,0)
 
@@ -764,10 +770,9 @@ def main():
                     #    raise Exception("Freeze frame outside bounds")
 
                     # Generate thumbnail of the picture and show it
-                    thumbnail=cv.resize(freeze_frame, (0,0), fx=0.25, fy=0.25)
+                    thumbnail=cv.resize(freeze_frame, (0,0), fx=0.30, fy=0.30)
                     thumnail_height, thumnail_width = thumbnail.shape[:2]
                     cv.imshow("Exposure",thumbnail)
-                    cv.waitKey(1)
 
                     # The Super8 frame is VERTICALLY aligned in the output image, horizontal alignment
                     # is left as a secondary phase in picture correction (along with colour alignment, scratch removal etc.)
@@ -775,24 +780,25 @@ def main():
                     #sproket_y = sorted(sproket_box, key=lambda y: y[1], reverse=False)[0]
                     #print("Found frame {0} at position {1} with Y of sproket hole {2}, exposure {3}".format(frame_number, marlin_y, sproket_y[1], my_exposure))
                     
-                    vertical_scale = highres_image_height/image_height
+                    #vertical_scale = highres_image_height/image_height
                     # Output video size is larger than the capture size to cope with vertical image stabilization
                     # these images will need to be further processed to make valid video files
                     # The height allow the image to bounce up and down
-                    output_video_frame_size = (int(highres_image_height+(centre_box[3]*vertical_scale)), int(highres_image_width), 3)
-
-                    output_image=PrepareImageForOutput(freeze_frame, frame_number, output_video_frame_size, vertical_scale*centre[1])
+                    #output_video_frame_size = (int(highres_image_height+(centre_box[3]*vertical_scale)), int(highres_image_width), 3)
+                    #output_image=PrepareImageForOutput(freeze_frame, frame_number, output_video_frame_size, vertical_scale*centre[1])
                     
                     filename = os.path.join(path+"{0}".format(my_exposure), "frame_{:08d}.png".format(frame_number))
 
                     # DEBUG MASK FOR OUTPUT IMAGES
                     #output_mask = np.zeros(output_image.shape[:2], dtype="uint8")
                     #cv.rectangle(output_mask, (327,96), (1230,720), 255, -1)
-                    #output_image = cv.bitwise_and(output_image, output_image, mask=output_mask)
+                    #freeze_frame = cv.bitwise_and(freeze_frame, freeze_frame, mask=output_mask)
 
                     # Save frame to disk, use lower compression to save CPU time (not image quality png = lossless)
-                    if cv.imwrite(filename, output_image, [cv.IMWRITE_PNG_COMPRESSION, 2])==False:
+                    start_time=time.perf_counter()
+                    if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_PNG_COMPRESSION, 2])==False:
                         raise IOError("Failed to save image")
+                    print("Save image",time.perf_counter() - start_time)
                     
                     #cv.imshow("output",output_image)
                     #cv.waitKey(50)
