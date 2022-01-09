@@ -330,7 +330,7 @@ output_path=OutputFolder()
 
 files=Filelist(input_path,"png")
 
-files=files[469:]
+#files=files[469:]
 
 try:
     # Skip this for now, we have already run it!
@@ -344,6 +344,7 @@ try:
     print("samples=",average_sample_count,"w=",average_width,"h=", average_height,"area=", average_area)
     
     previous_output_image=None
+    overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
     for filename in files:
         new_filename = os.path.join(output_path, os.path.basename(filename))
 
@@ -356,6 +357,8 @@ try:
             print(filename)
 
             new_image=processImage(img, 2350,1566, average_width, average_height, average_area)
+            
+            new_image = cv.bitwise_and(new_image, new_image, mask=overlay_frame)
 
             previous_output_image=new_filename
 
