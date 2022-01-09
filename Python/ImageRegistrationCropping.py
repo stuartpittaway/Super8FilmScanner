@@ -60,7 +60,7 @@ def draw_border(img, pt1, pt2, color, thickness, r, d):
     cv.ellipse(img, (x2 - r, y2 - r), (r, r), 0, 0, 90, color, thickness)
 
 
-def detectSproket(sproket_image):
+def detectSproket(sproket_image, lower_threshold:int=210):
     # Convert to gray and blur
     matrix = (3, 5)
     sproket_image = cv.GaussianBlur(sproket_image, matrix, 0)
@@ -69,7 +69,7 @@ def detectSproket(sproket_image):
 
     sproket_image = cv.equalizeHist(sproket_image)
     # Threshold
-    _, sproket_image = cv.threshold(sproket_image, 220, 255, cv.THRESH_BINARY)    
+    _, sproket_image = cv.threshold(sproket_image, lower_threshold, 255, cv.THRESH_BINARY)    
 
     cv.imshow("sproket_image",cv.resize(sproket_image, (0,0), fx=0.5, fy=0.5))
 
@@ -201,12 +201,14 @@ min_x=999999
 max_x=0
 min_y=999999
 max_y=0
+lower_t=210
 
 def processImage(original_image, output_w,output_h, average_width, average_height, average_area):
-    global min_x,max_x,min_y,max_y
+    global min_x,max_x,min_y,max_y, lower_t
 
     Detect=True
     manual_adjustment=False
+    #lower_t=210
     while True:        
         # Do inital crop of the input image
         # this assumes hardcoded image sizes and will need tweaks depending on input resolution
@@ -215,7 +217,7 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
 
         if Detect:
             #Take a vertical strip where the sproket should be (left hand side)
-            top_left_of_sproket_hole, bottom_right_of_sproket_hole, width_of_sproket_hole, height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:500])
+            top_left_of_sproket_hole, bottom_right_of_sproket_hole, width_of_sproket_hole, height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:500], lower_t)
 
         untouched_image=image.copy()
 
@@ -248,12 +250,12 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
         cv.rectangle(image, frame_tl, frame_br, (0,0,0), 20)
 
         # Highlight top right
-        cv.circle(image, (int(tr[0]), int(tr[1])), 8, (0, 0, 100), -1)
+        #cv.circle(image, (int(tr[0]), int(tr[1])), 8, (0, 0, 100), -1)
 
         if frame_tl[1]<0 or frame_tl[0]<0:
             print("frame_tl",frame_tl)
             manual_adjustment=True
-        #elif number_of_contours>4:
+        #elif number_of_contours>40:
         #    print("Contours",number_of_contours)
         #    manual_adjustment=True
         elif tr[0]<min_x or tr[0]>max_x or tr[1]<min_y or tr[1]>max_y:
@@ -275,6 +277,7 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
         if manual_adjustment==True:
             thumbnail=cv.resize(image, (0,0), fx=0.5, fy=0.5)
             cv.putText(thumbnail, "Cursor keys adjust frame capture, SPACE to confirm", (0, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2, cv.LINE_AA)
+            cv.putText(thumbnail, "[ and ] adjust threshold, current value={0}".format(lower_t), (0, 60), cv.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2, cv.LINE_AA)
             cv.imshow("Adjustment",thumbnail)
             k = cv.waitKeyEx(0) 
             print("key",k)
@@ -312,6 +315,13 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
 
             if k == 27:
                 raise Exception("Abort!")
+
+            if k == ord('['):
+                lower_t-=1
+                Detect=True
+            if k == ord(']'):
+                lower_t+=1
+                Detect=True
 
             if k == ord(' '):
                 #Accept
