@@ -197,7 +197,14 @@ def scanImages(files:List, maximum_number_of_samples:int=32):
 
     return average_sample_count,average_width,average_height,average_area
 
+min_x=999999
+max_x=0
+min_y=999999
+max_y=0
+
 def processImage(original_image, output_w,output_h, average_width, average_height, average_area):
+    global min_x,max_x,min_y,max_y
+
     Detect=True
     manual_adjustment=False
     while True:        
@@ -214,6 +221,10 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
 
         # draw actual detected sproket hole in grey
         #cv.rectangle(image, top_left_of_sproket_hole, bottom_right_of_sproket_hole, (100,100,100), 3)
+
+        # Draw the box of recorded allowable TOP RIGHT positions (just for fun)
+        if max_x>0:
+            cv.rectangle(image, (min_x,min_y), (max_x,max_y), (100,100,100), 3)
 
         #Draw "average" size rectangle in red, based on detected hole
         tl=(bottom_right_of_sproket_hole[0]-average_width,top_left_of_sproket_hole[1])
@@ -236,20 +247,24 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
         frame_br=(frame_tl[0]+output_w,frame_tl[1]+output_h)
         cv.rectangle(image, frame_tl, frame_br, (0,0,0), 20)
 
-        print(tr)
+        # Highlight top right
+        cv.circle(image, (int(tr[0]), int(tr[1])), 8, (0, 0, 100), -1)
 
         if frame_tl[1]<0 or frame_tl[0]<0:
             print("frame_tl",frame_tl)
             manual_adjustment=True
-        elif number_of_contours>4:
-            print("Contours",number_of_contours)
+        #elif number_of_contours>4:
+        #    print("Contours",number_of_contours)
+        #    manual_adjustment=True
+        elif tr[0]<min_x or tr[0]>max_x or tr[1]<min_y or tr[1]>max_y:
+            print("Outside accepted bounding box")
             manual_adjustment=True
-        elif height_of_sproket_hole<(average_height-padding) or height_of_sproket_hole>(average_height+padding):
-            print("Sproket Height wrong!!",height_of_sproket_hole)
-            manual_adjustment=True
-        elif width_of_sproket_hole<(average_width-padding) or width_of_sproket_hole>(average_width+padding):
-            print("Sproket width wrong!!",width_of_sproket_hole)
-            manual_adjustment=True
+        #elif height_of_sproket_hole<(average_height-padding) or height_of_sproket_hole>(average_height+padding):
+        #    print("Sproket Height wrong!!",height_of_sproket_hole)
+        #    manual_adjustment=True
+        #elif width_of_sproket_hole<(average_width-padding) or width_of_sproket_hole>(average_width+padding):
+        #    print("Sproket width wrong!!",width_of_sproket_hole)
+        #    manual_adjustment=True
         #elif top_left_of_sproket_hole[1]<590:
         #    print("top_left_of_sproket_hole Y value low")
         #    manual_adjustment=True
@@ -320,6 +335,14 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
                 output_image[offset_y:offset_y+h,0:w]=cropped
                 return output_image            
 
+            # Update our acceptable min/max ranges
+            min_x= min(min_x,tr[0])
+            max_x= max(max_x,tr[0])
+
+            min_y= min(min_y,tr[1])
+            max_y= max(max_y,tr[1])
+
+            print(min_x,min_y,max_x,max_y)
 
             return untouched_image[frame_tl[1]:frame_br[1],frame_tl[0]:frame_br[0]]
 
