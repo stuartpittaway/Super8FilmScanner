@@ -206,9 +206,13 @@ max_x=0
 min_y=999999
 max_y=0
 lower_t=225
+previous_frame_top_left_of_sproket_hole=None
+previous_frame_bottom_right_of_sproket_hole=None
 
 def processImage(original_image, average_width, average_height, average_area):
     global min_x,max_x,min_y,max_y, lower_t
+    global previous_frame_top_left_of_sproket_hole
+    global previous_frame_bottom_right_of_sproket_hole
 
     Detect=True
     manual_adjustment=False
@@ -282,7 +286,10 @@ def processImage(original_image, average_width, average_height, average_area):
         #    manual_adjustment=True
         #elif top_left_of_sproket_hole[0]<80:
         #    print("top_left_of_sproket_hole X value low")
-        #    manual_adjustment=True        
+        #    manual_adjustment=True
+
+        SMALL_STEP=2
+        LARGE_STEP=10*SMALL_STEP
 
         if manual_adjustment==True:
             thumbnail=cv.resize(image, (0,0), fx=0.4, fy=0.4)
@@ -296,31 +303,66 @@ def processImage(original_image, average_width, average_height, average_area):
             if k == 2490368:
                 #Move sproket location up
                 # change Y coords
-                top_left_of_sproket_hole=(top_left_of_sproket_hole[0],top_left_of_sproket_hole[1]-2)
-                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0],bottom_right_of_sproket_hole[1]-2)
+                top_left_of_sproket_hole=(top_left_of_sproket_hole[0],top_left_of_sproket_hole[1]-SMALL_STEP)
+                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0],bottom_right_of_sproket_hole[1]-SMALL_STEP)
                 Detect=False
 
             # Down
             if k == 2621440:
                 #Move sproket location down
                 # change Y coords
-                top_left_of_sproket_hole=(top_left_of_sproket_hole[0],top_left_of_sproket_hole[1]+2)
-                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0],bottom_right_of_sproket_hole[1]+2)
+                top_left_of_sproket_hole=(top_left_of_sproket_hole[0],top_left_of_sproket_hole[1]+SMALL_STEP)
+                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0],bottom_right_of_sproket_hole[1]+SMALL_STEP)
                 Detect=False
 
             # left
             if k == 2424832:
                 #Move sproket location left
                 # change X coords
-                top_left_of_sproket_hole=(top_left_of_sproket_hole[0]-2,top_left_of_sproket_hole[1])
-                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0]-2,bottom_right_of_sproket_hole[1])
+                top_left_of_sproket_hole=(top_left_of_sproket_hole[0]-SMALL_STEP,top_left_of_sproket_hole[1])
+                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0]-SMALL_STEP,bottom_right_of_sproket_hole[1])
                 Detect=False
 
             if k == 2555904:
                 #Move sproket location right
                 # change X coords
-                top_left_of_sproket_hole=(top_left_of_sproket_hole[0]+2,top_left_of_sproket_hole[1])
-                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0]+2,bottom_right_of_sproket_hole[1])
+                top_left_of_sproket_hole=(top_left_of_sproket_hole[0]+SMALL_STEP,top_left_of_sproket_hole[1])
+                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0]+SMALL_STEP,bottom_right_of_sproket_hole[1])
+                Detect=False
+
+            #  8
+            if k == ord('8'):
+                #Move sproket location up
+                # change Y coords
+                top_left_of_sproket_hole=(top_left_of_sproket_hole[0],top_left_of_sproket_hole[1]-LARGE_STEP)
+                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0],bottom_right_of_sproket_hole[1]-LARGE_STEP)
+                Detect=False
+
+            # Down
+            if k == ord('2'):
+                #Move sproket location down
+                # change Y coords
+                top_left_of_sproket_hole=(top_left_of_sproket_hole[0],top_left_of_sproket_hole[1]+LARGE_STEP)
+                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0],bottom_right_of_sproket_hole[1]+LARGE_STEP)
+                Detect=False
+
+            # left
+            if k == ord('4'):
+                #Move sproket location left
+                top_left_of_sproket_hole=(top_left_of_sproket_hole[0]-LARGE_STEP,top_left_of_sproket_hole[1])
+                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0]-LARGE_STEP,bottom_right_of_sproket_hole[1])
+                Detect=False
+
+            if k == ord('6'):
+                #Move sproket location right
+                top_left_of_sproket_hole=(top_left_of_sproket_hole[0]+LARGE_STEP,top_left_of_sproket_hole[1])
+                bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0]+LARGE_STEP,bottom_right_of_sproket_hole[1])
+                Detect=False
+
+            if k == ord('r'):
+                #Use previous frames locations
+                top_left_of_sproket_hole=previous_frame_top_left_of_sproket_hole
+                bottom_right_of_sproket_hole=previous_frame_bottom_right_of_sproket_hole
                 Detect=False
 
             if k == 27:
@@ -329,6 +371,7 @@ def processImage(original_image, average_width, average_height, average_area):
             if k == ord('['):
                 lower_t-=1
                 Detect=True
+
             if k == ord(']'):
                 lower_t+=1
                 Detect=True
@@ -363,6 +406,8 @@ def processImage(original_image, average_width, average_height, average_area):
             max_y= max(max_y,tr[1])
 
             #print(min_x,min_y,max_x,max_y)
+            previous_frame_top_left_of_sproket_hole=top_left_of_sproket_hole
+            previous_frame_bottom_right_of_sproket_hole=bottom_right_of_sproket_hole
 
             return untouched_image[frame_tl[1]:frame_br[1],frame_tl[0]:frame_br[0]]
 
