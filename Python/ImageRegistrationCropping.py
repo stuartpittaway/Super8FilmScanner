@@ -71,7 +71,7 @@ def detectSproket(sproket_image, lower_threshold:int=210):
     # Threshold
     _, sproket_image = cv.threshold(sproket_image, lower_threshold, 255, cv.THRESH_BINARY)    
 
-    cv.imshow("sproket_image",cv.resize(sproket_image, (0,0), fx=0.5, fy=0.5))
+    cv.imshow("sproket_image",cv.resize(sproket_image, (0,0), fx=0.4, fy=0.4))
 
     # Detect the sproket shape
     contours, _ = cv.findContours(sproket_image, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
@@ -247,10 +247,10 @@ def processImage(original_image, average_width, average_height, average_area):
 
         # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
         # calculate everything based on the ratio of the sproket holes
-        frame_tl=(int(tr[0]-average_width*0.4) ,int(tr[1] - average_height*1.33))
+        frame_tl=(int(tr[0]-average_width*0.35) ,int(tr[1] - average_height*1.33))
 
         # Height must be divisble by 2
-        frame_br=(int(frame_tl[0]+ average_width*7),int(frame_tl[1]+ average_height*3.62))
+        frame_br=(int(frame_tl[0]+ average_width*6.8),int(frame_tl[1]+ average_height*3.62))
         cv.rectangle(image, frame_tl, frame_br, (0,0,0), 8)
 
         output_w= frame_br[0]-frame_tl[0]
@@ -387,9 +387,14 @@ try:
     print("samples=",average_sample_count,"w=",average_width,"h=", average_height,"area=", average_area)
     
     previous_output_image_filename=None
-    overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
+    #overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
+    
     for filename in files:
         new_filename = os.path.join(output_path, os.path.basename(filename))
+
+        #Skip images which already exist
+        if os.path.exists(new_filename):
+            continue
 
         img = cv.imread(filename,cv.IMREAD_UNCHANGED)
         if img is None:
