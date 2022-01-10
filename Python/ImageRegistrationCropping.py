@@ -74,17 +74,17 @@ def detectSproket(sproket_image, lower_threshold:int=210):
     cv.imshow("sproket_image",cv.resize(sproket_image, (0,0), fx=0.5, fy=0.5))
 
     # Detect the sproket shape
-    contours, _ = cv.findContours(sproket_image, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_TC89_L1)
+    contours, _ = cv.findContours(sproket_image, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
 
     #cv.drawContours(image, contours, -1,color=(0,0,255), thickness=cv.FILLED)
 
     #Abort here if detection found nothing!
     if len(contours)==0:
+        #Return a fake reading (hard coded)
         return (455, 646), (455, 646),1,1, 0, 1, len(contours)
 
     # Sort by area, largest first (hopefully our sproket - we should only have 1 full sprocket in view at any 1 time)
-    contour = sorted(contours, key=lambda x: cv.contourArea(x), reverse=True)[0]
-        
+    contour = sorted(contours, key=lambda x: cv.contourArea(x), reverse=True)[0]      
 
     #colour = (100, 100, 100)
     #cv.drawContours(sproket_image, [contour], -1,color=colour, thickness=cv.FILLED)
@@ -122,9 +122,10 @@ def detectSproket(sproket_image, lower_threshold:int=210):
     return top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, len(contours)
 
 def cropOriginalImage(image):
-    y1=140
-    y2=y1+2000
-    return image[y1:y2,150:2900].copy()
+    return image.copy()
+    #y1=140
+    #y2=y1+2000
+    #return image[y1:y2,150:2900].copy()
 
 def scanImageForAverageCalculations(image):
     # Do inital crop of the input image
@@ -133,12 +134,15 @@ def scanImageForAverageCalculations(image):
     h, w =image.shape[:2]
 
     #Take a vertical strip where the sproket should be (left hand side)
-    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:500])
+    #Original image is 3556x2381
+    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.18)],lower_threshold=225)
+
+    cv.waitKey(100)
 
     #Only 1 shape detected, and no rotation
-    if number_of_contours==1 and (rotation==0.0 or rotation==90.0):
+    if number_of_contours<5 and (rotation==0.0 or rotation==90.0):
         cv.rectangle(image, top_left_of_sproket_hole, bottom_right_of_sproket_hole, (0,0,255), 2)
-        thumbnail=cv.resize(image, (0,0), fx=0.5, fy=0.5)
+        thumbnail=cv.resize(image, (0,0), fx=0.4, fy=0.4)
         return thumbnail, width_of_sproket_hole,height_of_sproket_hole, area
 
     return None, None,None,None
@@ -201,9 +205,9 @@ min_x=999999
 max_x=0
 min_y=999999
 max_y=0
-lower_t=210
+lower_t=225
 
-def processImage(original_image, output_w,output_h, average_width, average_height, average_area):
+def processImage(original_image, average_width, average_height, average_area):
     global min_x,max_x,min_y,max_y, lower_t
 
     Detect=True
@@ -217,7 +221,7 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
 
         if Detect:
             #Take a vertical strip where the sproket should be (left hand side)
-            top_left_of_sproket_hole, bottom_right_of_sproket_hole, width_of_sproket_hole, height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:500], lower_t)
+            top_left_of_sproket_hole, bottom_right_of_sproket_hole, width_of_sproket_hole, height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.18)], lower_t)
 
         untouched_image=image.copy()
 
@@ -240,17 +244,23 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
         #print(top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours)
 
         # Allowable tolerance around the "average"
-        padding=20
 
-        # right hand corner of sproket hole seems to be always best aligned (manual observation)
-        # so use that as datum for the whole frame capture
-        frame_tl=(tr[0]-125,tr[1]-562)
+        # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
+        # calculate everything based on the ratio of the sproket holes
+        frame_tl=(int(tr[0]-average_width*0.4) ,int(tr[1] - average_height*1.33))
+
         # Height must be divisble by 2
-        frame_br=(frame_tl[0]+output_w,frame_tl[1]+output_h)
-        cv.rectangle(image, frame_tl, frame_br, (0,0,0), 20)
+        frame_br=(int(frame_tl[0]+ average_width*7),int(frame_tl[1]+ average_height*3.62))
+        cv.rectangle(image, frame_tl, frame_br, (0,0,0), 8)
+
+        output_w= frame_br[0]-frame_tl[0]
+        output_h= frame_br[1]-frame_tl[1]
+
+        print(output_w,output_h)
 
         # Highlight top right
         #cv.circle(image, (int(tr[0]), int(tr[1])), 8, (0, 0, 100), -1)
+        #padding=20
 
         if frame_tl[1]<0 or frame_tl[0]<0:
             print("frame_tl",frame_tl)
@@ -275,7 +285,7 @@ def processImage(original_image, output_w,output_h, average_width, average_heigh
         #    manual_adjustment=True        
 
         if manual_adjustment==True:
-            thumbnail=cv.resize(image, (0,0), fx=0.5, fy=0.5)
+            thumbnail=cv.resize(image, (0,0), fx=0.4, fy=0.4)
             cv.putText(thumbnail, "Cursor keys adjust frame capture, SPACE to confirm", (0, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2, cv.LINE_AA)
             cv.putText(thumbnail, "[ and ] adjust threshold, current value={0}".format(lower_t), (0, 60), cv.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2, cv.LINE_AA)
             cv.imshow("Adjustment",thumbnail)
@@ -369,14 +379,14 @@ try:
     # Skip this for now, we have already run it!
     #average_sample_count,average_width,average_height,average_area=scanImages(files[:200])
 
-    average_sample_count=33
-    average_width=350
-    average_height=442
-    average_area=150478
+    average_sample_count=0
+    average_width=432
+    average_height=546
+    average_area=230316
 
     print("samples=",average_sample_count,"w=",average_width,"h=", average_height,"area=", average_area)
     
-    previous_output_image=None
+    previous_output_image_filename=None
     overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
     for filename in files:
         new_filename = os.path.join(output_path, os.path.basename(filename))
@@ -385,17 +395,16 @@ try:
         if img is None:
             print("Error opening file",filename,"replacing bad frame")
             #Clone frame to cover up corrupt/missing file
-            shutil.copy2(previous_output_image, new_filename)
+            shutil.copy2(previous_output_image_filename, new_filename)
         else:
             print(filename)
 
-            new_image=processImage(img, 2350,1566, average_width, average_height, average_area)
+            new_image=processImage(img,  average_width, average_height, average_area)
             
-            new_image = cv.bitwise_and(new_image, new_image, mask=overlay_frame)
+            #new_image = cv.bitwise_and(new_image, new_image, mask=overlay_frame)
+            previous_output_image_filename=new_filename
 
-            previous_output_image=new_filename
-
-            if cv.imwrite(new_filename, new_image, [cv.IMWRITE_PNG_COMPRESSION, 1])==False:
+            if cv.imwrite(new_filename, new_image, [cv.IMWRITE_PNG_COMPRESSION, 2])==False:
                 raise IOError("Failed to save image")
 
             #Show thumbnail at 50% of original
