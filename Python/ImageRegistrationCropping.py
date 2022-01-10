@@ -247,16 +247,16 @@ def processImage(original_image, average_width, average_height, average_area):
 
         # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
         # calculate everything based on the ratio of the sproket holes
-        frame_tl=(int(tr[0]-average_width*0.35) ,int(tr[1] - average_height*1.33))
+        frame_tl=(int(tr[0]-average_width*0.35) ,int(tr[1] - average_height*1.31))
 
         # Height must be divisble by 2
-        frame_br=(int(frame_tl[0]+ average_width*6.8),int(frame_tl[1]+ average_height*3.62))
+        frame_br=(int(frame_tl[0]+ average_width*6.77),int(frame_tl[1]+ average_height*3.61))
         cv.rectangle(image, frame_tl, frame_br, (0,0,0), 8)
 
         output_w= frame_br[0]-frame_tl[0]
         output_h= frame_br[1]-frame_tl[1]
 
-        print(output_w,output_h)
+        #print(output_w,output_h)
 
         # Highlight top right
         #cv.circle(image, (int(tr[0]), int(tr[1])), 8, (0, 0, 100), -1)
@@ -290,7 +290,7 @@ def processImage(original_image, average_width, average_height, average_area):
             cv.putText(thumbnail, "[ and ] adjust threshold, current value={0}".format(lower_t), (0, 60), cv.FONT_HERSHEY_SIMPLEX, 1, (200, 200, 200), 2, cv.LINE_AA)
             cv.imshow("Adjustment",thumbnail)
             k = cv.waitKeyEx(0) 
-            print("key",k)
+            #print("key",k)
 
             # Cursor UP
             if k == 2490368:
@@ -362,7 +362,7 @@ def processImage(original_image, average_width, average_height, average_area):
             min_y= min(min_y,tr[1])
             max_y= max(max_y,tr[1])
 
-            print(min_x,min_y,max_x,max_y)
+            #print(min_x,min_y,max_x,max_y)
 
             return untouched_image[frame_tl[1]:frame_br[1],frame_tl[0]:frame_br[0]]
 
@@ -387,8 +387,8 @@ try:
     print("samples=",average_sample_count,"w=",average_width,"h=", average_height,"area=", average_area)
     
     previous_output_image_filename=None
-    #overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
-    
+    overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
+
     for filename in files:
         new_filename = os.path.join(output_path, os.path.basename(filename))
 
@@ -405,15 +405,43 @@ try:
             print(filename)
 
             new_image=processImage(img,  average_width, average_height, average_area)
+            h, w =new_image.shape[:2]
+
+            #Original image is smaller than the crop size/frame size, so pad out
+            #Need to pad out the image at the TOP...
+            #cropped=untouched_image[0:frame_br[1],frame_tl[0]:frame_br[0]].copy()
+            #h, w =cropped.shape[:2]
+            # Full sized image
+            output_h=1080
+            output_w=1920            
+
+            #Scale new_image to keep correct aspect ratio
+            scale = output_w/w
+            if h*scale > output_h:
+                scale = output_h/h
+
+            scale_w=int(w*scale)
+            scale_h=int(h*scale)
+            #Horizontal centre frame
+            scale_x_offset=int(output_w/2 - scale_w/2)
+            scaled_image=cv.resize(new_image, (scale_w,scale_h), interpolation=cv.INTER_AREA)
             
-            #new_image = cv.bitwise_and(new_image, new_image, mask=overlay_frame)
+            new_image = np.zeros((output_h,output_w,3), np.uint8)
+            new_image[0:scale_h,scale_x_offset:scale_x_offset+scale_w]=scaled_image
+
+            # Place cropped into bottom right corner
+            #output_image[offset_y:offset_y+h,0:w]=cropped
+
             previous_output_image_filename=new_filename
 
-            if cv.imwrite(new_filename, new_image, [cv.IMWRITE_PNG_COMPRESSION, 2])==False:
+            # Finally apply the mask over the top of the resized final video frame
+            new_image = cv.bitwise_and(new_image, new_image, mask=overlay_frame)
+
+            if cv.imwrite(new_filename, new_image, [cv.IMWRITE_PNG_COMPRESSION, 3])==False:
                 raise IOError("Failed to save image")
 
             #Show thumbnail at 50% of original
-            thumbnail=cv.resize(new_image, (0,0), fx=0.35, fy=0.35)
+            thumbnail=cv.resize(new_image, (0,0), fx=0.5, fy=0.5)
             cv.imshow("Final",thumbnail)
 
             k = cv.waitKey(1) & 0xFF
