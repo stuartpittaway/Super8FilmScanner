@@ -33,6 +33,11 @@ import subprocess
 camera=None
 
 def pointInRect(point, rect):
+    if point==None:
+        return False
+    if rect==None:
+        return False
+        
     x1, y1, w, h = rect
     x2, y2 = x1+w, y1+h
     x, y = point
@@ -500,7 +505,7 @@ def main():
     #VERTICAL_OUTPUT_OFFSET = 50
 
     path = OutputFolder(CAMERA_EXPOSURE)
-    starting_frame_number = determineStartingFrameNumber(path+"-8.0", "png")
+    starting_frame_number = determineStartingFrameNumber(path+"-8.0", "bmp")
     #starting_frame_number=465bb
     print("Starting at frame number ", starting_frame_number)
 
@@ -589,7 +594,10 @@ def main():
                 manual_control = True
 
             # Check keyboard
-            k = cv.waitKey(5) & 0xFF
+            if manual_control == True:
+                k = cv.waitKey(250) & 0xFF
+            else:
+                k = cv.waitKey(10) & 0xFF
 
             if k == 27:    # Esc key to stop/abort
                 break
@@ -623,6 +631,7 @@ def main():
                 if k == ord(']'):
                     lower_threshold+=1
 
+                # grab
                 if k == ord('g'):
                     # Press g to force capture of a picture, you must ensure the sproket is 
                     # manually aligned first
@@ -636,15 +645,15 @@ def main():
             # camera images before giving up...
             for n in range(0, 5):
                 my_frame, centre, _ = ProcessImage(centre_box, video_width, video_height, True, CAMERA_EXPOSURE[0], lower_threshold=lower_threshold)
-                if centre != None or manual_grab==True:
+                if centre != None or manual_grab==True or manual_control==True:
                     break
                 print("Regrab image, no centre")
 
             if frame_number > 0:
                 fps = (frame_number-starting_frame_number) / \
                     (datetime.now()-time_start).total_seconds()
-                cv.putText(my_frame, "Frames {0}, Capture FPS {1:.2f}".format(
-                    frame_number-starting_frame_number, fps), (0, 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1, cv.LINE_AA)
+                cv.putText(my_frame, "Frames {0}, Capture FPS {1:.2f}, fp/h {2:.1f}".format(
+                    frame_number-starting_frame_number, fps, fps*3600), (0, 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1, cv.LINE_AA)
 
             if manual_control == True:
                 cv.putText(my_frame, "Manual Control Active, keys f/b to align and SPACE to continue",
@@ -660,7 +669,7 @@ def main():
             image_height, image_width = my_frame.shape[:2]
             cv.imshow('RawVideo', my_frame)
             # Let the screen refresh
-            cv.waitKey(5)
+            cv.waitKey(3)
 
             if centre == None and manual_grab==False:
                 # We don't have a WHOLE sproket hole visible on the photo (may be partial ones)
@@ -723,7 +732,7 @@ def main():
                     #but we need to crop down
 
                     #crop large image to remove plastic gate edges
-                    #use ratios in case the camera image changes
+                    #use ratios in case the camera resolution changes
                     y1=int(0.003 * highres_image_height)
                     y2=int(0.957 * highres_image_height)
                     x1=int(0.036 * highres_image_width)
@@ -777,7 +786,7 @@ def main():
                     #output_video_frame_size = (int(highres_image_height+(centre_box[3]*vertical_scale)), int(highres_image_width), 3)
                     #output_image=PrepareImageForOutput(freeze_frame, frame_number, output_video_frame_size, vertical_scale*centre[1])
                     
-                    filename = os.path.join(path+"{0}".format(my_exposure), "frame_{:08d}.png".format(frame_number))
+                    filename = os.path.join(path+"{0}".format(my_exposure), "frame_{:08d}.bmp".format(frame_number))
 
                     # DEBUG MASK FOR OUTPUT IMAGES
                     #output_mask = np.zeros(output_image.shape[:2], dtype="uint8")
@@ -790,7 +799,8 @@ def main():
                     # PNG output, with NO compression - which is quicker (less CPU time) on Rasp PI
                     # at expense of disk I/O
                     # PNG is always lossless
-                    if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_PNG_COMPRESSION, 0])==False:
+                    if cv.imwrite(filename, freeze_frame)==False:
+                    #if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_PNG_COMPRESSION, 0])==False:
                     #if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_JPEG_QUALITY, 100])==False:
                         raise IOError("Failed to save image")
                     print("Save image took {:.2f} seconds".format(time.perf_counter() - start_time))
