@@ -135,7 +135,7 @@ def scanImageForAverageCalculations(image):
 
     #Take a vertical strip where the sproket should be (left hand side)
     #Original image is 3556x2381
-    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.18)],lower_threshold=225)
+    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.20)],lower_threshold=220)
 
     cv.waitKey(100)
 
@@ -225,7 +225,7 @@ def processImage(original_image, average_width, average_height, average_area):
 
         if Detect:
             #Take a vertical strip where the sproket should be (left hand side)
-            top_left_of_sproket_hole, bottom_right_of_sproket_hole, width_of_sproket_hole, height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.18)], lower_t)
+            top_left_of_sproket_hole, bottom_right_of_sproket_hole, width_of_sproket_hole, height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.24)], lower_t)
 
         untouched_image=image.copy()
 
@@ -421,13 +421,13 @@ files=Filelist(input_path,"png")
 #files=files[469:]
 
 try:
-    # Skip this for now, we have already run it!
-    #average_sample_count,average_width,average_height,average_area=scanImages(files[:200])
-
     average_sample_count=0
     average_width=432
-    average_height=546
-    average_area=230316
+    average_height=542
+    average_area=228240
+
+    # Skip this for now, we have already run it!
+    #average_sample_count,average_width,average_height,average_area=scanImages(files[:200])
 
     print("samples=",average_sample_count,"w=",average_width,"h=", average_height,"area=", average_area)
     
