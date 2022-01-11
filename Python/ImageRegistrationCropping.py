@@ -135,12 +135,12 @@ def scanImageForAverageCalculations(image):
 
     #Take a vertical strip where the sproket should be (left hand side)
     #Original image is 3556x2381
-    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.20)],lower_threshold=220)
+    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.20)],lower_threshold=225)
 
-    cv.waitKey(100)
+    cv.waitKey(25)
 
     #Only 1 shape detected, and no rotation
-    if number_of_contours<5 and (rotation==0.0 or rotation==90.0):
+    if number_of_contours<5 and (rotation==0.0 or rotation==90.0 or (rotation>0 and rotation<1)):
         cv.rectangle(image, top_left_of_sproket_hole, bottom_right_of_sproket_hole, (0,0,255), 2)
         thumbnail=cv.resize(image, (0,0), fx=0.4, fy=0.4)
         return thumbnail, width_of_sproket_hole,height_of_sproket_hole, area
@@ -251,10 +251,10 @@ def processImage(original_image, average_width, average_height, average_area):
 
         # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
         # calculate everything based on the ratio of the sproket holes
-        frame_tl=(int(tr[0]-average_width*0.35) ,int(tr[1] - average_height*1.31))
+        frame_tl=(int(tr[0]-average_width*0.35) ,int(tr[1] - average_height*1.30))
 
         # Height must be divisble by 2
-        frame_br=(int(frame_tl[0]+ average_width*6.77),int(frame_tl[1]+ average_height*3.61))
+        frame_br=(int(frame_tl[0]+ average_width*7.0),int(frame_tl[1]+ average_height*3.68))
         cv.rectangle(image, frame_tl, frame_br, (0,0,0), 8)
 
         output_w= frame_br[0]-frame_tl[0]
@@ -273,7 +273,7 @@ def processImage(original_image, average_width, average_height, average_area):
         #    print("Contours",number_of_contours)
         #    manual_adjustment=True
         elif tr[0]<min_x or tr[0]>max_x or tr[1]<min_y or tr[1]>max_y:
-            print("Outside accepted bounding box")
+            print("Outside learned bounding box")
             manual_adjustment=True
         #elif height_of_sproket_hole<(average_height-padding) or height_of_sproket_hole>(average_height+padding):
         #    print("Sproket Height wrong!!",height_of_sproket_hole)
@@ -421,13 +421,13 @@ files=Filelist(input_path,"png")
 #files=files[469:]
 
 try:
-    average_sample_count=0
-    average_width=432
-    average_height=542
-    average_area=228240
+    average_sample_count=33
+    average_width=317
+    average_height=404
+    average_area=122511
 
     # Skip this for now, we have already run it!
-    #average_sample_count,average_width,average_height,average_area=scanImages(files[:200])
+    #average_sample_count,average_width,average_height,average_area=scanImages(files[:300])
 
     print("samples=",average_sample_count,"w=",average_width,"h=", average_height,"area=", average_area)
     
