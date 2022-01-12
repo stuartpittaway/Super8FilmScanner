@@ -17,7 +17,9 @@
 # Z axis is used to drive film reel take up spool
 # FAN output is used to drive LED light for back light of frames
 
-import picamera
+from picamera.array import PiRGBArray
+from picamera import PiCamera
+
 import numpy as np
 import cv2 as cv
 import glob
@@ -113,15 +115,14 @@ def TakeHighResPicture():
     image_height, image_width = large_image.shape[:2]
     return large_image, image_height, image_width
 
-def ProcessImage(centre_box: list, draw_rects=True, exposure_level=-8.0, lower_threshold=200):
+def ProcessImage(large_image, centre_box: list, draw_rects=True, exposure_level=-8.0, lower_threshold=200):
     #start_time=time.perf_counter()
 
     # Contour of detected sproket needs to be this large to be classed as valid (area)
     MIN_AREA_OF_SPROKET = 2600
     MAX_AREA_OF_SPROKET = int(MIN_AREA_OF_SPROKET * 1.30)
 
-    large_image,highres_image_height,highres_image_width=TakeHighResPicture()
-
+    #large_image,highres_image_height,highres_image_width=TakeHighResPicture()
 
     preview_image=cv.resize(large_image.copy(), (640,480))
     image_height, image_width = preview_image.shape[:2]
@@ -132,8 +133,8 @@ def ProcessImage(centre_box: list, draw_rects=True, exposure_level=-8.0, lower_t
     # Use RATIO 0.09 rather than exact pixels to cater for different resolutions if needed
     y1=int(image_width*0.09)
     y2=image_height-y1
-    x1=int(y1/1.33)
-    x2=image_width-x1
+    x1=0    #int(y1/1.33)
+    x2=image_width  #-x1
     preview_image = preview_image[y1:y2,x1:x2].copy()
     image_height, image_width = preview_image.shape[:2]    
 
@@ -153,7 +154,9 @@ def ProcessImage(centre_box: list, draw_rects=True, exposure_level=-8.0, lower_t
 
     # Threshold to only keep the sproket data visible (which is now bright white)
     _, threshold = cv.threshold(imgGry, lower_threshold, 255, cv.THRESH_BINARY)
-    cv.imshow('threshold', threshold)
+    #cv.imshow('threshold', threshold)
+    # Paste the threshold into the left handside of the preview image to aid visualisation
+    preview_image[0:image_height,0:centre_box[2],1]= threshold
 
     #print("Step 2",time.perf_counter() - start_time)
 
@@ -198,7 +201,7 @@ def ProcessImage(centre_box: list, draw_rects=True, exposure_level=-8.0, lower_t
                 #cv.drawContours(large_image, [box], 0, colour, 8)
 
             #print(time.perf_counter() - start_time)
-            return large_image,preview_image, centre, box
+            return preview_image, centre, box
         else:
             print("Area is ",area)
             # pass
@@ -206,7 +209,7 @@ def ProcessImage(centre_box: list, draw_rects=True, exposure_level=-8.0, lower_t
         cv.putText(preview_image, "No contour", (0, 50), cv.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2, cv.LINE_AA)
 
     #print(time.perf_counter() - start_time)
-    return large_image,preview_image, None, None
+    return preview_image, None, None
 
 def MoveFilm(marlin: serial.Serial, y: float, feed_rate: int):
     SendMarlinCmd(marlin, "G0 Y{0:.4f} F{1}".format(y, feed_rate))
@@ -299,15 +302,31 @@ def OutputFolder(exposures:list) -> str:
 lower_threshold=200
 
 def StartupAlignment(marlin: serial.Serial,centre_box):
-    global lower_threshold
+    global lower_threshold, camera
     marlin_y = 0
     reel_z = 0
 
     return_value = False
 
-    while True:
+    configureLowResCamera()
+
+    res=(640,480)
+    rawCapture=PiRGBArray(camera, size=res)
+    for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
+    #while True:
         #SetExposure(videoCaptureObject)
-        _,preview_image, centre, _ = ProcessImage(centre_box, True, lower_threshold=lower_threshold)
+
+        #Capture a small 640x480 image for the preview
+        image = frame.array
+        # clear the stream in preparation for the next frame
+        rawCapture.truncate(0)
+        rawCapture.seek(0)
+
+        # Mirror horizontal - sproket is now on left of image
+        image = cv.flip(image,0)
+
+        #large_image,highres_image_height,highres_image_width=TakeHighResPicture()
+        preview_image, centre, _ = ProcessImage(image,centre_box, True, lower_threshold=lower_threshold)
 
         if centre == None:
             cv.putText(preview_image, "Sproket hole not detected",
@@ -330,7 +349,7 @@ def StartupAlignment(marlin: serial.Serial,centre_box):
         cv.imshow('RawVideo',preview_image)
 
         # Check keyboard, wait 0.5 second whilst we do that, then refresh the image capture
-        k = cv.waitKey(500) & 0xFF
+        k = cv.waitKey(50) & 0xFF
 
         if k == ord(' '):    # SPACE key to continue
             return_value = True
@@ -363,6 +382,8 @@ def StartupAlignment(marlin: serial.Serial,centre_box):
             reel_z -= 360
             MoveReel(marlin, reel_z, 20000, False)
 
+    camera.close()
+    camera=None
     return return_value
 
 def determineStartingFrameNumber(path: str, ext: str) -> int:
@@ -396,33 +417,32 @@ def configureHighResCamera():
         #if camera!=None and camera.closed==False:
         #    camera.close()
 
-        #3840,2496 = 9584640pixels
-        #4064,3040 = 12330240pixels
-        #3840x2896 = 11120640pixels
+        #3840,2496 = 9,584,640pixels
+        #4064,3040 = 12,330,240pixels
+        #3840x2896 = 11,120,640pixels
         #1920,1440
-        #2880x2166
-        camera=picamera.PiCamera(resolution=(2880,2176),framerate = 30)
+        #2880x2166 = 6,266,880pixels
+        res=(2880,2176)
+        camera=PiCamera(resolution=res,framerate = 30)
         camera.exposure_mode = 'auto'
         camera.awb_mode='auto'
         camera.meter_mode='backlit'
 
     return camera.resolution[0],camera.resolution[1]
 
+def configureLowResCamera():
+    global camera
 
-#def configurePreviewCamera():
-#    global camera
+    if camera!=None and camera.closed==False:
+        camera.close()
 
-    # Close the preview camera object
-#    if camera!=None and camera.closed==False:
-#        camera.close()
+    res=(640,480)
+    camera=PiCamera(resolution=res,framerate = 30)
+    camera.exposure_mode = 'auto'
+    camera.awb_mode='auto'
+    camera.meter_mode='backlit'
 
-#    camera=picamera.PiCamera(resolution = (640,480),framerate=30)
-    #camera.shutter_speed = 10000
-#    camera.exposure_mode = 'auto'
-    #camera.iso = 1600
-#    camera.awb_mode='auto'
-#    camera.meter_mode='backlit'
-#    return camera.resolution[0],camera.resolution[1]
+    return camera.resolution[0],camera.resolution[1]
 
 
 def main():
@@ -456,10 +476,11 @@ def main():
 
     # Calculate the radius of the tape on the take up spool
     camera=None
-    highres_width,highres_height=configureHighResCamera()
+    configureHighResCamera()
 
     #Take a picture to work out what the actual image dimension are (after cropping)
-    _,preview_image, _, _ = ProcessImage([25, 0, 32, 40])
+    large_image,highres_height,highres_width=TakeHighResPicture()
+    preview_image, _, _ = ProcessImage(large_image,[25, 0, 32, 40])
     image_height, image_width = preview_image.shape[:2]
 
     print("Camera configured for resolution ", highres_width, "x", highres_height, ".  Preview image ",image_width,"x",image_height)
@@ -467,15 +488,18 @@ def main():
 
     # This is the trigger rectangle for the sproket identification
     # must be in the centre of the screen without cropping each frame of Super8
-
-    # Default
-    #centre_box = [130, 0, 50, 40]
+    # dimensions are based on the preview window 556x366
     # X,Y, W, H
-    centre_box = [25, 0, 32, 40]
+    centre_box = [80, 0, 32, 40]
     # Ensure centre_box is in the centre of the video resolution/image size
+    # we use the PREVIEW sized window for this
     centre_box[1] = int(image_height/2-centre_box[3]/2)
 
+    
+
     if StartupAlignment(marlin,centre_box) == True:
+        
+        configureHighResCamera()
         # Crude FPS calculation
         time_start = datetime.now()
 
@@ -574,7 +598,8 @@ def main():
             # camera images before giving up...
             for n in range(0, 2):
                 last_exposure=CAMERA_EXPOSURE[0]
-                freeze_frame, preview_image, centre, _ = ProcessImage(centre_box, True, CAMERA_EXPOSURE[0], lower_threshold=lower_threshold)
+                freeze_frame,highres_image_height,highres_image_width=TakeHighResPicture()
+                preview_image, centre, _ = ProcessImage(freeze_frame,centre_box, True, CAMERA_EXPOSURE[0], lower_threshold=lower_threshold)
                 if centre != None or manual_grab==True or manual_control==True:
                     break
                 print("Regrab image, no centre")
@@ -583,11 +608,15 @@ def main():
                 fps = (frame_number-starting_frame_number) / \
                     (datetime.now()-time_start).total_seconds()
                 cv.putText(preview_image, "Frames {0}, Capture FPS {1:.2f}, fp/h {2:.1f}".format(
-                    frame_number-starting_frame_number, fps, fps*3600), (0, 20), cv.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1, cv.LINE_AA)
+                    frame_number-starting_frame_number, fps, fps*3600), (8, 20), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1, cv.LINE_AA)
+                cv.putText(preview_image, "Threshold {0}".format(
+                    lower_threshold), (8, 40), cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1, cv.LINE_AA)
 
             if manual_control == True:
-                cv.putText(preview_image, "Manual Control Active, keys f/b to align and SPACE to continue",
+                cv.putText(preview_image, "Manual Control Active, keys f/b to align",
                             (0, 300), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv.LINE_AA)
+                cv.putText(preview_image, "[ and ] alter threshold. SPACE to continue",
+                            (0, 350), cv.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv.LINE_AA)
 
             if centre == None and manual_grab==False:
                 cv.putText(preview_image, "SPROKET HOLE LOST", (16, 100),
