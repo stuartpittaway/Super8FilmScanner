@@ -251,10 +251,10 @@ def processImage(original_image, average_width, average_height, average_area):
 
         # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
         # calculate everything based on the ratio of the sproket holes
-        frame_tl=(int(tr[0]-average_width*0.35) ,int(tr[1] - average_height*1.30))
+        frame_tl=(int(tr[0]-average_width*0.195) ,int(tr[1] - average_height*1.30))
 
         # Height must be divisble by 2
-        frame_br=(int(frame_tl[0]+ average_width*7.0),int(frame_tl[1]+ average_height*3.68))
+        frame_br=(int(frame_tl[0]+ average_width*6.88),int(frame_tl[1]+ average_height*3.60))
         cv.rectangle(image, frame_tl, frame_br, (0,0,0), 8)
 
         output_w= frame_br[0]-frame_tl[0]
@@ -422,9 +422,9 @@ files=Filelist(input_path,"png")
 
 try:
     average_sample_count=33
-    average_width=317
-    average_height=404
-    average_area=122511
+    average_width=324
+    average_height=411
+    average_area=129331
 
     # Skip this for now, we have already run it!
     #average_sample_count,average_width,average_height,average_area=scanImages(files[:300])
