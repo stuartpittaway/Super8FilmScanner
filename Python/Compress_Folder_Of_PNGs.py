@@ -20,7 +20,12 @@ if not os.path.exists(input_path):
 
 while True:
     # Scan for bitmap files to convert, skip first one (most recent) in cas its being written to
-    for filename in Filelist(input_path,"bmp")[2:]:
+    files=Filelist(input_path,"bmp")
+    if len(files)==0:
+        print("Nothing to do, so quit...")
+        quit()
+
+    for filename in files:  #[2:]:
         img = cv.imread(filename,cv.IMREAD_UNCHANGED)
         if img is None:
             print("Error opening file",filename)
@@ -30,7 +35,7 @@ while True:
             start_time=time.perf_counter()
             # PNG output, with NO compression - which is quicker (less CPU time) on Rasp PI
             # at expense of disk I/O. PNG is always lossless
-            if cv.imwrite(output_filename, img, [cv.IMWRITE_PNG_COMPRESSION, 2])==True:
+            if cv.imwrite(output_filename, img, [cv.IMWRITE_PNG_COMPRESSION, 3])==True:
                 print("Save image took {:.2f} seconds".format(time.perf_counter() - start_time))
                 #Delete source file
                 os.remove(filename)

@@ -62,7 +62,7 @@ def draw_border(img, pt1, pt2, color, thickness, r, d):
 
 def detectSproket(sproket_image, lower_threshold:int=210):
     # Convert to gray and blur
-    matrix = (3, 5)
+    matrix = (3, 7)
     sproket_image = cv.GaussianBlur(sproket_image, matrix, 0)
     
     sproket_image = cv.cvtColor(sproket_image, cv.COLOR_BGR2GRAY)
@@ -135,9 +135,9 @@ def scanImageForAverageCalculations(image):
 
     #Take a vertical strip where the sproket should be (left hand side)
     #Original image is 3556x2381
-    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.20)],lower_threshold=225)
+    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.20)],lower_threshold=230)
 
-    cv.waitKey(25)
+    cv.waitKey(15)
 
     #Only 1 shape detected, and no rotation
     if number_of_contours<5 and (rotation==0.0 or rotation==90.0 or (rotation>0 and rotation<1)):
@@ -190,6 +190,10 @@ def scanImages(files:List, maximum_number_of_samples:int=32):
                 if k == 27:
                     return_value = False
                     break
+
+                if (average_sample_count>20):
+                    break
+
 # samples= 16 w= 352 h= 443 area= 151601
     if (average_sample_count<10):
         raise Exception("Unable to detect suitable sample size")
@@ -225,7 +229,7 @@ def processImage(original_image, average_width, average_height, average_area):
 
         if Detect:
             #Take a vertical strip where the sproket should be (left hand side)
-            top_left_of_sproket_hole, bottom_right_of_sproket_hole, width_of_sproket_hole, height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.24)], lower_t)
+            top_left_of_sproket_hole, bottom_right_of_sproket_hole, width_of_sproket_hole, height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.22)], lower_t)
 
         untouched_image=image.copy()
 
@@ -251,11 +255,11 @@ def processImage(original_image, average_width, average_height, average_area):
 
         # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
         # calculate everything based on the ratio of the sproket holes
-        frame_tl=(int(tr[0]-average_width*0.195) ,int(tr[1] - average_height*1.30))
+        frame_tl=(int(tr[0]-average_width*0.195) ,int(tr[1] - average_height*1.20))
 
         # Height must be divisble by 2
-        frame_br=(int(frame_tl[0]+ average_width*6.88),int(frame_tl[1]+ average_height*3.60))
-        cv.rectangle(image, frame_tl, frame_br, (0,0,0), 8)
+        frame_br=(int(frame_tl[0]+ average_width*6.3),int(frame_tl[1]+ average_height*3.48))
+        cv.rectangle(image, frame_tl, frame_br, (0,200,200), 8)
 
         output_w= frame_br[0]-frame_tl[0]
         output_h= frame_br[1]-frame_tl[1]
@@ -421,17 +425,20 @@ files=Filelist(input_path,"png")
 #files=files[469:]
 
 try:
-    average_sample_count=33
-    average_width=324
-    average_height=411
-    average_area=129331
+    average_sample_count=21
+    average_width=328
+    average_height=417
+    average_area=132901
+    #samples= 21 w= 320 h= 411 area= 128100
+    #samples= 21 w= 342 h= 433 area= 143085
+    #samples= 21 w= 328 h= 417 area= 132901
 
     # Skip this for now, we have already run it!
     #average_sample_count,average_width,average_height,average_area=scanImages(files[:300])
 
     print("samples=",average_sample_count,"w=",average_width,"h=", average_height,"area=", average_area)
     
-    previous_output_image_filename=None
+    previous_output_image_filename=None 
     overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
 
     for filename in files:
@@ -452,27 +459,33 @@ try:
             new_image=processImage(img,  average_width, average_height, average_area)
             h, w =new_image.shape[:2]
 
-            #Original image is smaller than the crop size/frame size, so pad out
-            #Need to pad out the image at the TOP...
-            #cropped=untouched_image[0:frame_br[1],frame_tl[0]:frame_br[0]].copy()
-            #h, w =cropped.shape[:2]
-            # Full sized image
-            output_h=1080
-            output_w=1920            
 
-            #Scale new_image to keep correct aspect ratio
-            scale = output_w/w
-            if h*scale > output_h:
-                scale = output_h/h
+            # Resize image and put into 16:9 frame?
+            if True==False:
+                #Output a slightly higher resolution - use post editing to resize
+                #this outputs at 16:9 scale
+                #output_h=1558
+                #output_w=int(output_h*(1920/1080))
 
-            scale_w=int(w*scale)
-            scale_h=int(h*scale)
-            #Horizontal centre frame
-            scale_x_offset=int(output_w/2 - scale_w/2)
-            scaled_image=cv.resize(new_image, (scale_w,scale_h), interpolation=cv.INTER_AREA)
-            
-            new_image = np.zeros((output_h,output_w,3), np.uint8)
-            new_image[0:scale_h,scale_x_offset:scale_x_offset+scale_w]=scaled_image
+                output_h=1080
+                output_w=1920
+
+                #Scale new_image to keep correct aspect ratio
+                scale = output_w/w
+                if h*scale > output_h:
+                    scale = output_h/h
+
+                scale_w=int(w*scale)
+                scale_h=int(h*scale)
+
+                print("Scaled image w=",scale_w,"h=",scale_h, "original w=",w,"h=",h)
+                #Horizontal centre frame
+                scale_x_offset=int(output_w/2 - scale_w/2)
+                scaled_image=cv.resize(new_image, (scale_w,scale_h), interpolation=cv.INTER_AREA)
+                
+                new_image = np.zeros((output_h,output_w,3), np.uint8)
+                new_image[0:scale_h,scale_x_offset:scale_x_offset+scale_w]=scaled_image
+
 
             # Place cropped into bottom right corner
             #output_image[offset_y:offset_y+h,0:w]=cropped
@@ -480,9 +493,9 @@ try:
             previous_output_image_filename=new_filename
 
             # Finally apply the mask over the top of the resized final video frame
-            new_image = cv.bitwise_and(new_image, new_image, mask=overlay_frame)
+            #new_image = cv.bitwise_and(new_image, new_image, mask=overlay_frame)
 
-            if cv.imwrite(new_filename, new_image, [cv.IMWRITE_PNG_COMPRESSION, 3])==False:
+            if cv.imwrite(new_filename, new_image, [cv.IMWRITE_PNG_COMPRESSION,1])==False:
                 raise IOError("Failed to save image")
 
             #Show thumbnail at 50% of original
