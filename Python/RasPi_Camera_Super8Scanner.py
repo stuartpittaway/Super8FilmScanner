@@ -131,8 +131,8 @@ def GetPreviewImage(large_image):
     # leave the sproket and the edges of the frame visible
 
     # Use RATIO 0.09 rather than exact pixels to cater for different resolutions if needed
-    y1 = int(image_width*0.09)
-    y2 = image_height-y1
+    y1 = 0  # int(image_width*0.02)
+    y2 = image_height  # -y1
     x1 = 0  # int(y1/1.33)
     x2 = image_width  # -x1
     preview_image = preview_image[y1:y2, x1:x2].copy()
@@ -372,7 +372,7 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
     res = (640, 480)
     rawCapture = PiRGBArray(camera, size=res)
 
-    #Set to defaults
+    # Set to defaults
     AutoWB(camera, (Fraction(23, 8), Fraction(471, 256)))
     SetExposure(camera, shutter_speed, iso)
 
@@ -512,7 +512,9 @@ def configureHighResCamera():
         # 3840x2896 = 11,120,640pixels
         # 1920,1440
         # 2880x2166 = 6,266,880pixels
-        res = (2880, 2176)
+        # 3008x2256 = 6,786,048
+        # 3104x2336 = 7,250,944
+        res = (3104, 2336)
         camera = PiCamera(resolution=res, framerate=30)
         camera.exposure_mode = 'auto'
         camera.awb_mode = 'auto'
@@ -581,7 +583,7 @@ def main():
     # must be in the centre of the screen without cropping each frame of Super8
     # dimensions are based on the preview window 556x366
     # X,Y, W, H
-    centre_box = [80, 0, 32, 40]
+    centre_box = [50, 0, 32, 60]
     # Ensure centre_box is in the centre of the video resolution/image size
     # we use the PREVIEW sized window for this
     centre_box[1] = int(image_height/2-centre_box[3]/2)
@@ -619,17 +621,16 @@ def main():
         micro_adjustment_steps = 0
 
         # while True:
-        configureHighResCamera()
+        highres_width, highres_height = configureHighResCamera()
 
         AutoWB(camera)
         SetExposure(camera, shutter_speed, iso)
 
-        rawCapture = PiRGBArray(camera, size=(2880, 2176))
+        rawCapture = PiRGBArray(camera, size=(highres_width, highres_height))
 
         for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=False):
             #freeze_frame = frame.array
             freeze_frame = frame.array
-
             rawCapture.truncate(0)
             rawCapture.seek(0)
             # Mirror horizontal - sproket is now on left of image
@@ -640,7 +641,8 @@ def main():
             if frames_to_add_to_spool > FRAMES_TO_WAIT_UNTIL_SPOOLING+3:
                 # We have processed 12 frames, but only wind 10 onto the spool to leave some slack (3 frames worth)
                 angle = calculateAngleForSpoolTakeUp(
-                    INNER_DIAMETER_OF_TAKE_UP_SPOOL_MM, FRAME_HEIGHT_MM, FILM_THICKNESS_MM, frames_already_on_spool, FRAMES_TO_WAIT_UNTIL_SPOOLING)
+                    INNER_DIAMETER_OF_TAKE_UP_SPOOL_MM, FRAME_HEIGHT_MM,
+                    FILM_THICKNESS_MM, frames_already_on_spool, FRAMES_TO_WAIT_UNTIL_SPOOLING)
                 #print("Take up spool angle=",angle)
                 reel_z -= angle
                 # Move the stepper spool
@@ -821,14 +823,11 @@ def main():
 
                     # crop large image to remove plastic gate edges
                     # use ratios in case the camera resolution changes
-                    #y1=int(0.003 * highres_image_height)
-                    #y2=int(0.957 * highres_image_height)
-
-                    y1 = int(0.1 * highres_image_height)
-                    y2 = int(1 * highres_image_height)
-                    x1 = int(0.043 * highres_image_width)
-                    x2 = int(0.975 * highres_image_width)
-                    freeze_frame = freeze_frame[y1:y2, x1:x2].copy()
+                    #y1 = int(0.00 * highres_image_height)
+                    #y2 = int(1.00 * highres_image_height)
+                    #x1 = int(0.00 * highres_image_width)
+                    #x2 = int(1.00 * highres_image_width)
+                    #freeze_frame = freeze_frame[y1:y2, x1:x2].copy()
                     highres_image_height, highres_image_width = freeze_frame.shape[:2]
 
                     # Output image is now 3556x2381 = 8.5Megapixel (still way overkill for Super8!)
@@ -893,7 +892,7 @@ def main():
                     # at expense of disk I/O
                     # PNG is always lossless
                     if cv.imwrite(filename, freeze_frame) == False:
-                        # if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_PNG_COMPRESSION, 0])==False:
+                        # if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_PNG_COMPRESSION, 1])==False:
                         # if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_JPEG_QUALITY, 100])==False:
                         raise IOError("Failed to save image")
                     print("Save image took {0:.2f} seconds for frame {1}".format(
