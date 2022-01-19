@@ -78,3 +78,16 @@ For a description of the paramters, check out the [OpenCV documentation](https:/
 
 The files are put into a folder named "Denoise".  Example image.
 ![Frame after denoise filtering](Sample_Images/After_DeNoise.png)
+
+## Step 5 - Create Video
+
+### FFMPEG
+You can use the open source FFMPEG tool to convert a serial of pictures into a video, using a command similar to this:
+```
+ffmpeg.exe -y -start_number 0 -framerate 18 -i "Aligned\frame_%08d.png" -vcodec h264 -preset slower -tune grain -crf 15 -vf "fps=18,format=yuv420p" -r 18 film_output.mp4
+```
+
+### Video editor software
+Alternatively, use video editing software like [Davinci Resolve](https://www.blackmagicdesign.com/products/davinciresolve/) to import the pictures and generate a video.
+
+This can also be used to colour correct the film, remove noise and grain and generally improve the final video.
