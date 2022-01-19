@@ -135,12 +135,16 @@ def scanImageForAverageCalculations(image):
 
     #Take a vertical strip where the sproket should be (left hand side)
     #Original image is 3556x2381
-    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[0:h,0:int(w*0.20)],lower_threshold=230)
+    y1=int(h*0.2)
+    y2=int(h*0.8)
+    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[y1:y2,0:int(w*0.20)],lower_threshold=175)
 
     cv.waitKey(15)
 
     #Only 1 shape detected, and no rotation
-    if number_of_contours<5 and (rotation==0.0 or rotation==90.0 or (rotation>0 and rotation<1)):
+    if number_of_contours<10 and (rotation==0.0 or rotation==90.0 or (rotation>0 and rotation<1)):
+        top_left_of_sproket_hole=(top_left_of_sproket_hole[0],y1+top_left_of_sproket_hole[1])
+        bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0],y1+bottom_right_of_sproket_hole[1])
         cv.rectangle(image, top_left_of_sproket_hole, bottom_right_of_sproket_hole, (0,0,255), 2)
         thumbnail=cv.resize(image, (0,0), fx=0.4, fy=0.4)
         return thumbnail, width_of_sproket_hole,height_of_sproket_hole, area
@@ -253,12 +257,20 @@ def processImage(original_image, average_width, average_height, average_area):
 
         # Allowable tolerance around the "average"
 
+        # Frame dimensions - this will need to be altered on every scan
+        # perhaps enhance the GUI to use mouse coordinates?
+        # Negative offset X,Y and then W,H
+        frame_dims=(-64,-630, 2650, 1790)
+
         # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
         # calculate everything based on the ratio of the sproket holes
-        frame_tl=(int(tr[0]-average_width*0.195) ,int(tr[1] - average_height*1.20))
+        #frame_tl=(int(tr[0]-average_width*0.165) ,int(tr[1] - average_height*1.31))
+        frame_tl=(int(tr[0]+frame_dims[0]) ,int(tr[1] + frame_dims[1]))
 
         # Height must be divisble by 2
-        frame_br=(int(frame_tl[0]+ average_width*6.3),int(frame_tl[1]+ average_height*3.48))
+        #frame_br=(int(frame_tl[0]+ average_width*6.85),int(frame_tl[1]+ average_height*3.55))
+        frame_br=(int(frame_tl[0]+ frame_dims[2]),int(frame_tl[1]+ frame_dims[3]))
+        
         cv.rectangle(image, frame_tl, frame_br, (0,200,200), 8)
 
         output_w= frame_br[0]-frame_tl[0]
@@ -426,13 +438,11 @@ files=Filelist(input_path,"png")
 
 try:
     average_sample_count=21
-    average_width=328
-    average_height=417
-    average_area=132901
-    #samples= 21 w= 320 h= 411 area= 128100
-    #samples= 21 w= 342 h= 433 area= 143085
-    #samples= 21 w= 328 h= 417 area= 132901
-
+    average_width=390
+    average_height=502
+    average_area=189541
+    #samples= 21 w= 388 h= 504 area= 188039
+    #samples= 21 w= 390 h= 502 area= 189541
     # Skip this for now, we have already run it!
     #average_sample_count,average_width,average_height,average_area=scanImages(files[:300])
 
@@ -446,7 +456,7 @@ try:
 
         #Skip images which already exist
         if os.path.exists(new_filename):
-            continue
+            continue 
 
         img = cv.imread(filename,cv.IMREAD_UNCHANGED)
         if img is None:
