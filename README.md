@@ -34,7 +34,7 @@ Scanning is slow, running around 0.35 frames per second, so a 3 minute reel take
 
 Speed was not a critical issue when designing this solution, however the longest delay is capturing the image from the Raspberry Pi camera and then writing the image to disk.
 
-The images captured would look like this (only higher resolution)
+The images captured would look like this (only higher resolution).  Notice you can see the sproket hole and the black border on the right of the image.
 ![Full frame sample image](Sample_Images/Full_Frame_Sample.png)
 
 ## Step 2 - Convert the BMP files to PNG for archiving (Optional)
@@ -49,11 +49,13 @@ This is a separate step, as the Raspberry Pi scanning is significantly slower if
 
 You will have to configure the Raspberry Pi to expose a network share for you to access from a desktop PC.
 
+You can run this process whilst scanning is operating, to avoid the memory card on the Pi filling up.
+
 The files are put into a folder named "Capture"
 
 ## Step 3 - Alignment
 
-Step 1 captured the full frame of the film, this process takes those master images and accurately crops them to vertically and horizontally align them based on the sproket hole.
+Step one captured the full frame of the film, this process takes those master images and accurately crops them to vertically and horizontally align them based on the sproket hole.
 
 OpenCV is used to detect the hole and align/crop the image.
 
