@@ -82,7 +82,7 @@ The files are put into a folder named "Denoise".  Example image.
 ## Step 5 - Create Video
 
 ### FFMPEG
-You can use the open source FFMPEG tool to convert a serial of pictures into a video, using a command similar to this:
+You can use the open source FFMPEG tool to convert a series of pictures into a video, using a command similar to this:
 ```
 ffmpeg.exe -y -start_number 0 -framerate 18 -i "Aligned\frame_%08d.png" -vcodec h264 -preset slower -tune grain -crf 15 -vf "fps=18,format=yuv420p" -r 18 film_output.mp4
 ```
