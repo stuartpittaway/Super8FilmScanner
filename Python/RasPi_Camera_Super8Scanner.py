@@ -17,9 +17,11 @@
 # Z axis is used to drive film reel take up spool
 # FAN output is used to drive LED light for back light of frames
 
+from socket import timeout
 from picamera.array import PiRGBArray
 from picamera import PiCamera
-
+import queue
+from threading import Thread
 from fractions import Fraction
 import numpy as np
 import cv2 as cv
@@ -38,6 +40,9 @@ camera = None
 shutter_speed = 1000
 iso = 50
 
+NUM_THREADS = 2
+
+q = queue.Queue(maxsize=10)
 
 def pointInRect(point, rect):
     if point == None:
@@ -354,9 +359,23 @@ def SetExposure(c: PiCamera, shutter_speed: int = 1000, iso: int = 100):
     print("AFTER: iso", c.iso, "exposure_mode", c.exposure_mode, "exposure_speed", c.exposure_speed,
           "shutter_speed", c.shutter_speed)
 
+new_lower_threshold_value=0
+def on_startup_threshold_trackbar(val):
+    global new_lower_threshold_value
+    new_lower_threshold_value=val
+    pass
+
+new_shutter_speed_value=0
+def on_startup_shutter_speed_trackbar(val):
+    global new_shutter_speed_value
+    new_shutter_speed_value=val
+
 def StartupAlignment(marlin: serial.Serial, centre_box):
     global lower_threshold, camera
     global shutter_speed, iso
+
+    WINDOW_NAME='Startup Alignment'
+
     marlin_y = 0
     reel_z = 0
 
@@ -378,6 +397,16 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
     #AutoWB(camera, (Fraction(23, 8), Fraction(471, 256)))
 
     threshold_enable=False
+
+   
+    cv.namedWindow(WINDOW_NAME)
+    trackbar_name = 'Threshold value'
+    cv.createTrackbar(trackbar_name, WINDOW_NAME , lower_threshold, 254, on_startup_threshold_trackbar)
+    cv.setTrackbarMin(trackbar_name,WINDOW_NAME, 50)
+
+    trackbar_name2 = 'Camera shutter speed'
+    cv.createTrackbar(trackbar_name2, WINDOW_NAME , shutter_speed, 100000, on_startup_shutter_speed_trackbar)
+    cv.setTrackbarMin(trackbar_name2,WINDOW_NAME, 50)
 
     for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
 
@@ -406,31 +435,34 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
                        (10, 20), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 0), 1, cv.LINE_AA)
 
         # Help text..
-        cv.putText(preview_image, "press f to nudge forward, b for back",
-                   (8, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
-        cv.putText(preview_image, "j to jump forward quickly, t toggle threshold",
-                   (8, 90), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
-        cv.putText(preview_image, "[ and ] alter threshold, value={0}".format(lower_threshold),
-                   (8, 115), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
-        cv.putText(preview_image, ", and . alter shutter_speed, value={0}, iso={1}".format(shutter_speed, iso), (8, 300), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
-        cv.putText(preview_image, "r to rewind spool (1 revolution), ESC to quit",
-                   (8, 330), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+        cv.putText(preview_image, "press UP/DOWN to nudge reel, SPACE to cont.",(8, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+        cv.putText(preview_image, "j to jump forward, t toggle threshold style.",(8, 90), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+        cv.putText(preview_image, "Threshold, value={0}".format(lower_threshold),(8, 115), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+        cv.putText(preview_image, "shutter_speed, value={0}, iso={1}".format(shutter_speed, iso), (8, 300), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+        cv.putText(preview_image, "r to rewind spool (1 revolution), ESC to quit", (8, 330), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
 
         image_height, image_width = preview_image.shape[:2]
-        cv.imshow('RawVideo', preview_image)
+        cv.imshow(WINDOW_NAME, preview_image)
+
+        if new_lower_threshold_value!=lower_threshold:
+            lower_threshold=new_lower_threshold_value
+
+        if shutter_speed!=new_shutter_speed_value:
+            shutter_speed=new_shutter_speed_value
+            SetExposure(camera, shutter_speed, iso)
 
         # Check keyboard, wait whilst we do that, then refresh the image capture
-        k = cv.waitKey(50) & 0xFF
+        k = cv.waitKeyEx(30)
 
         if k == ord(' '):    # SPACE key to continue
             return_value = True
             break
 
-        if k == ord('['):
-            lower_threshold -= 2
+        #if k == ord('['):
+        #    lower_threshold -= 2
 
-        if k == ord(']'):
-            lower_threshold += 2
+        #if k == ord(']'):
+        #    lower_threshold += 2
 
         if k == ord('t'):
             threshold_enable=not(threshold_enable)
@@ -442,33 +474,36 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
             # Set auto white balance and then lock
             AutoWB(camera)
 
-        if k == ord(','):
-            shutter_speed -= 50
-            if shutter_speed < 50:
-                shutter_speed = 50
-            SetExposure(camera, shutter_speed, iso)
+        #if k == ord(','):
+        #    shutter_speed -= 50
+        #    if shutter_speed < 50:
+        #        shutter_speed = 50
+        #    SetExposure(camera, shutter_speed, iso)
 
-        if k == ord('.'):
-            shutter_speed += 50
-            if shutter_speed > 300000:
-                shutter_speed = 300000
-            SetExposure(camera, shutter_speed, iso)
+        #if k == ord('.'):
+        #    shutter_speed += 50
+        #    if shutter_speed > 300000:
+        #        shutter_speed = 300000
+        #    SetExposure(camera, shutter_speed, iso)
 
+        #Escape
         if k == 27:
             return_value = False
             break
 
-        if k == ord('f'):
+        #Down
+        if k == 65362:
             marlin_y += 1
-            MoveFilm(marlin, marlin_y, 500)
+            MoveFilm(marlin, marlin_y, 1000)
 
         if k == ord('j'):
             marlin_y += 100
             MoveFilm(marlin, marlin_y, 8000)
 
-        if k == ord('b'):
+        #Up
+        if k == 65364:
             marlin_y -= 1
-            MoveFilm(marlin, marlin_y, 500)
+            MoveFilm(marlin, marlin_y, 1000)
 
         if k == ord('r'):
             # Rewind tape reel
@@ -477,6 +512,7 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
 
     camera.close()
     camera = None
+    cv.destroyWindow(WINDOW_NAME)
     return return_value
 
 
@@ -544,6 +580,25 @@ def configureLowResCamera():
 
     return camera.resolution[0], camera.resolution[1]
 
+def ServiceImageWriteQueue(q):
+
+    path = OutputFolder([])
+
+    while True:
+        data=q.get(block=True, timeout=None)
+        
+        filename = os.path.join(path+"{0}".format(data["exposure"]), "frame_{:08d}.png".format(data["number"]))
+        # Save frame to disk.
+        # PNG output, with NO compression - which is quicker (less CPU time) on Rasp PI
+        # at expense of disk I/O
+        # PNG is always lossless
+        start_time = time.perf_counter()
+        #if cv.imwrite(filename, data["image"]) == False:
+        if cv.imwrite(filename, data["image"], [cv.IMWRITE_PNG_COMPRESSION, 1])==False:
+            # if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_JPEG_QUALITY, 100])==False:
+            raise IOError("Failed to save image")
+        print("Save image took {0:.2f} seconds".format(time.perf_counter() - start_time))
+        q.task_done()
 
 def main():
     global camera
@@ -571,7 +626,7 @@ def main():
     #VERTICAL_OUTPUT_OFFSET = 50
 
     path = OutputFolder(CAMERA_EXPOSURE)
-    starting_frame_number = determineStartingFrameNumber(path+"-8.0", "bmp")
+    starting_frame_number = determineStartingFrameNumber(path+"-8.0", "png")
     # starting_frame_number=465bb
     print("Starting at frame number ", starting_frame_number)
 
@@ -626,6 +681,11 @@ def main():
         manual_control = False
     # try:
         micro_adjustment_steps = 0
+
+        for i in range(NUM_THREADS):
+            worker = Thread(target=ServiceImageWriteQueue, args=(q,))
+            worker.setDaemon(True)
+            worker.start()
 
         # while True:
         highres_width, highres_height = configureHighResCamera()
@@ -885,26 +945,28 @@ def main():
                     #output_video_frame_size = (int(highres_image_height+(centre_box[3]*vertical_scale)), int(highres_image_width), 3)
                     #output_image=PrepareImageForOutput(freeze_frame, frame_number, output_video_frame_size, vertical_scale*centre[1])
 
-                    filename = os.path.join(
-                        path+"{0}".format(my_exposure), "frame_{:08d}.bmp".format(frame_number))
 
                     # DEBUG MASK FOR OUTPUT IMAGES
                     #output_mask = np.zeros(output_image.shape[:2], dtype="uint8")
                     #cv.rectangle(output_mask, (327,96), (1230,720), 255, -1)
                     #freeze_frame = cv.bitwise_and(freeze_frame, freeze_frame, mask=output_mask)
 
-                    # Save frame to disk.
-                    start_time = time.perf_counter()
 
+                    # Save the image to the queue
+                    q.put( {"number":frame_number,"exposure":my_exposure, "image":freeze_frame} )
+                    print("Image put onto queue, length=",q.qsize())
+
+                    # Save frame to disk.
                     # PNG output, with NO compression - which is quicker (less CPU time) on Rasp PI
                     # at expense of disk I/O
                     # PNG is always lossless
-                    if cv.imwrite(filename, freeze_frame) == False:
+                    #start_time = time.perf_counter()
+                    #if cv.imwrite(filename, freeze_frame) == False:
                         # if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_PNG_COMPRESSION, 1])==False:
                         # if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_JPEG_QUALITY, 100])==False:
-                        raise IOError("Failed to save image")
-                    print("Save image took {0:.2f} seconds for frame {1}".format(
-                        time.perf_counter() - start_time, frame_number))
+                    #    raise IOError("Failed to save image")
+                    #print("Save image took {0:.2f} seconds for frame {1}".format(
+                    #    time.perf_counter() - start_time, frame_number))
 
                     # cv.imshow("output",output_image)
                     # cv.waitKey(50)
@@ -968,12 +1030,15 @@ def main():
     #    cv.waitKey()
 
     # Finished/Quit....
+    print("Waiting for image write queue to empty... length=",q.qsize())
+    q.join()
+    print("Destroy windows")
     cv.destroyAllWindows()
+    print("Disconnect Marlin")
     DisconnectFromMarlin(marlin)
 
     if camera != None and camera.closed == False:
         camera.close()
-
 
 if __name__ == "__main__":
     main()
