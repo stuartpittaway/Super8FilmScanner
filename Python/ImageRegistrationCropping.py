@@ -8,6 +8,22 @@ import glob
 import shutil
 import traceback
 
+import queue
+from threading import Thread
+
+NUM_THREADS = 2
+
+q = queue.Queue(maxsize=10)
+
+def ServiceImageWriteQueue(q):
+    while True:
+        data=q.get(block=True, timeout=None)
+
+        if cv.imwrite(data["filename"], data["image"], [cv.IMWRITE_PNG_COMPRESSION,1])==False:
+            raise IOError("Failed to save image")
+
+        q.task_done()
+
 def OutputFolder() -> str:
     # Create folders for the different EV exposure levels
     
@@ -260,7 +276,7 @@ def processImage(original_image, average_width, average_height, average_area):
         # Frame dimensions - this will need to be altered on every scan
         # perhaps enhance the GUI to use mouse coordinates?
         # Negative offset X,Y and then W,H
-        frame_dims=(-64,-630, 2630, 1775)
+        frame_dims=(-60,-620, 2615, 1765)
 
         # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
         # calculate everything based on the ratio of the sproket holes
@@ -438,10 +454,10 @@ files=Filelist(input_path,"png")
 
 try:
     average_sample_count=21
-    average_width=385
+    average_width=387
     average_height=500
-    average_area=185311
-    #samples= 21 w= 385 h= 500 area= 185311
+    average_area=187717
+    #samples= 21 w= 387 h= 500 area= 187717
     
     # Skip this for now, we have already run it!
     #average_sample_count,average_width,average_height,average_area=scanImages(files[:300])
@@ -450,6 +466,11 @@ try:
     
     previous_output_image_filename=None 
     overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
+
+    for i in range(NUM_THREADS):
+        worker = Thread(target=ServiceImageWriteQueue, args=(q,))
+        worker.setDaemon(True)
+        worker.start()
 
     for filename in files:
         new_filename = os.path.join(output_path, os.path.basename(filename))
@@ -505,11 +526,11 @@ try:
             # Finally apply the mask over the top of the resized final video frame
             #new_image = cv.bitwise_and(new_image, new_image, mask=overlay_frame)
 
-            if cv.imwrite(new_filename, new_image, [cv.IMWRITE_PNG_COMPRESSION,1])==False:
-                raise IOError("Failed to save image")
+            q.put( {"filename":new_filename, "image":new_image} )
+
 
             #Show thumbnail at 50% of original
-            thumbnail=cv.resize(new_image, (0,0), fx=0.5, fy=0.5)
+            thumbnail=cv.resize(new_image, (0,0), fx=0.4, fy=0.4)
             cv.imshow("Final",thumbnail)
 
             k = cv.waitKey(1) & 0xFF
@@ -525,4 +546,6 @@ except BaseException as err:
     cv.waitKey()
 
 finally:
+    print("Waiting for image write queue to empty... length=",q.qsize())
+    q.join()
     cv.destroyAllWindows()
