@@ -10,7 +10,7 @@ import os
 def Filelist(path: str, ext: str) -> int:
     return sorted(glob.glob(os.path.join(path, "frame_????????."+ext)), reverse=False)
 
-input_path = "E:\\source\\Super8FilmScanner\\Python\\Aligned-Steve"
+input_path = "E:\\source\\Super8FilmScanner\\Python\\Aligned"
 if not os.path.exists(input_path):
     raise FileNotFoundError("Missing input folder")
 
@@ -29,8 +29,8 @@ target_h=None
 target_w=None
 
 # These are automatically calculated if not supplied, based on the first image in the folder
-target_w=2650
-target_h=1790
+#target_w=2650
+#target_h=1790
 
 # Size of images on screen (scaled down from 1920x1080)
 PREVIEW_SCALE=0.5
