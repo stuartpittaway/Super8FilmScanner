@@ -111,21 +111,7 @@ def SendMultipleMarlinCmd(MarlinSerialPort: serial.Serial, cmds: list) -> bool:
     return True
 
 
-def TakeHighResPicture():
-    global camera
-    start_time = time.perf_counter()
-    video_width, video_height = configureHighResCamera()
-    # Capture at the requested resolution in BGR format
-    large_image = np.empty((video_height, video_width, 3), dtype=np.uint8)
-    camera.capture(large_image, 'bgr', use_video_port=False)
 
-    # Mirror horizontal - sproket is now on left of image
-    large_image = cv.flip(large_image, 0)
-
-    print("High res image capture {:.2f}".format(
-        time.perf_counter() - start_time))
-    image_height, image_width = large_image.shape[:2]
-    return large_image, image_height, image_width
 
 
 def GetPreviewImage(large_image):
@@ -372,7 +358,10 @@ def on_startup_shutter_speed_trackbar(val):
 
 def StartupAlignment(marlin: serial.Serial, centre_box):
     global lower_threshold, camera
+    global new_shutter_speed_value,new_lower_threshold_value
     global shutter_speed, iso
+
+
 
     WINDOW_NAME='Startup Alignment'
 
@@ -398,6 +387,9 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
 
     threshold_enable=False
 
+    new_shutter_speed_value=shutter_speed
+    new_lower_threshold_value=lower_threshold
+
    
     cv.namedWindow(WINDOW_NAME)
     trackbar_name = 'Threshold value'
@@ -419,7 +411,6 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
         # Mirror horizontal - sproket is now on left of image
         image = cv.flip(image, 0)
 
-        # large_image,highres_image_height,highres_image_width=TakeHighResPicture()
         preview_image, centre, _ = ProcessImage(image, centre_box, True, lower_threshold=lower_threshold)
 
         # Threshold the entire colour image, this helps find if we have a back light issue
@@ -458,12 +449,6 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
             return_value = True
             break
 
-        #if k == ord('['):
-        #    lower_threshold -= 2
-
-        #if k == ord(']'):
-        #    lower_threshold += 2
-
         if k == ord('t'):
             threshold_enable=not(threshold_enable)
 
@@ -473,18 +458,6 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
         if k == ord('a'):
             # Set auto white balance and then lock
             AutoWB(camera)
-
-        #if k == ord(','):
-        #    shutter_speed -= 50
-        #    if shutter_speed < 50:
-        #        shutter_speed = 50
-        #    SetExposure(camera, shutter_speed, iso)
-
-        #if k == ord('.'):
-        #    shutter_speed += 50
-        #    if shutter_speed > 300000:
-        #        shutter_speed = 300000
-        #    SetExposure(camera, shutter_speed, iso)
 
         #Escape
         if k == 27:
@@ -592,12 +565,11 @@ def ServiceImageWriteQueue(q):
         # PNG output, with NO compression - which is quicker (less CPU time) on Rasp PI
         # at expense of disk I/O
         # PNG is always lossless
-        start_time = time.perf_counter()
+        #start_time = time.perf_counter()
         #if cv.imwrite(filename, data["image"]) == False:
-        if cv.imwrite(filename, data["image"], [cv.IMWRITE_PNG_COMPRESSION, 1])==False:
-            # if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_JPEG_QUALITY, 100])==False:
+        if cv.imwrite(filename, data["image"], [cv.IMWRITE_PNG_COMPRESSION, 2])==False:
             raise IOError("Failed to save image")
-        print("Save image took {0:.2f} seconds".format(time.perf_counter() - start_time))
+        #print("Save image took {0:.2f} seconds".format(time.perf_counter() - start_time))
         q.task_done()
 
 def main():
@@ -666,7 +638,7 @@ def main():
         # Position on film reel (in marlin Y units)
         marlin_y = 0.0
         # Default space (in marlin Y units) between frames on the reel
-        frame_spacing = 20
+        frame_spacing = 20.5
         # List of positions (marlin y) where last frames were captured/found
         last_y_list = []
 
@@ -880,140 +852,27 @@ def main():
                 for my_exposure in CAMERA_EXPOSURE:
                     # Take a fresh photo now the motion has stopped, ensure the centre is calculated...
 
-                    if last_exposure == my_exposure:
-                        highres_image_height, highres_image_width = freeze_frame.shape[:2]
-                    else:
+                    #if last_exposure == my_exposure:
+                    #    highres_image_height, highres_image_width = freeze_frame.shape[:2]
+                    #else:
                         # Take a fresh image
-                        freeze_frame, highres_image_height, highres_image_width = TakeHighResPicture()
+                    #    freeze_frame, highres_image_height, highres_image_width = TakeHighResPicture()
 
-                    # camera image is 3840,2496 = 9.5Megapixels (way overkill for Super8!)
-                    # but we need to crop down
-
-                    # crop large image to remove plastic gate edges
-                    # use ratios in case the camera resolution changes
-                    #y1 = int(0.00 * highres_image_height)
-                    #y2 = int(1.00 * highres_image_height)
-                    #x1 = int(0.00 * highres_image_width)
-                    #x2 = int(1.00 * highres_image_width)
-                    #freeze_frame = freeze_frame[y1:y2, x1:x2].copy()
                     highres_image_height, highres_image_width = freeze_frame.shape[:2]
 
-                    # Output image is now 3556x2381 = 8.5Megapixel (still way overkill for Super8!)
-
-                    # Reduce file size a little
-                    #freeze_frame = cv.resize(freeze_frame,(0,0), fx=0.8, fy=0.8, interpolation = cv.INTER_AREA)
-
-                    # Mirror - sproket is now on left of image
-                    #freeze_frame = cv.flip(freeze_frame,0)
-
-                    # for n in range(0, 10):
-                    #    #Delay to let the film/camera settle before a new image
-                    #    #SetExposure(videoCaptureObject,my_exposure)
-                    #    freeze_frame, centre, sproket_box = ProcessImage(centre_box, video_width, video_height, False, my_exposure)
-                    #    # Exit loop if we have a valid picture
-                    #    if centre != None:
-                    #        break
-
-                    # if centre == None:
-                    #    print("ERROR: Lost frame - Freeze frame photo didn't find sproket! (Exposure=",my_exposure)
-                    #    manual_control = True
-                    #    raise Exception("Lost frame")
-
-                    # Double check the sproket is still in the correct place...
-                    # if pointInRect(centre, centre_box) == False:
-                    #    print("Freeze frame centre point outside bounds - trying to align again! (Exposure=",my_exposure)
-                    #    #cv.imshow("freeze_frame",freeze_frame)
-                    #    #continue
-                    #    raise Exception("Freeze frame outside bounds")
-
                     # Generate thumbnail of the picture and show it
-                    thumbnail = cv.resize(
-                        freeze_frame, (0, 0), fx=0.30, fy=0.30)
+                    thumbnail = cv.resize(freeze_frame, (0, 0), fx=0.30, fy=0.30)
                     thumnail_height, thumnail_width = thumbnail.shape[:2]
                     cv.imshow("Exposure", thumbnail)
 
-                    # The Super8 frame is VERTICALLY aligned in the output image, horizontal alignment
-                    # is left as a secondary phase in picture correction (along with colour alignment, scratch removal etc.)
-                    # Determine lowest Y value from the sproket rectangle, use that to vertically centre the frame
-                    #sproket_y = sorted(sproket_box, key=lambda y: y[1], reverse=False)[0]
-                    #print("Found frame {0} at position {1} with Y of sproket hole {2}, exposure {3}".format(frame_number, marlin_y, sproket_y[1], my_exposure))
-
-                    #vertical_scale = highres_image_height/image_height
-                    # Output video size is larger than the capture size to cope with vertical image stabilization
-                    # these images will need to be further processed to make valid video files
-                    # The height allow the image to bounce up and down
-                    #output_video_frame_size = (int(highres_image_height+(centre_box[3]*vertical_scale)), int(highres_image_width), 3)
-                    #output_image=PrepareImageForOutput(freeze_frame, frame_number, output_video_frame_size, vertical_scale*centre[1])
-
-
-                    # DEBUG MASK FOR OUTPUT IMAGES
-                    #output_mask = np.zeros(output_image.shape[:2], dtype="uint8")
-                    #cv.rectangle(output_mask, (327,96), (1230,720), 255, -1)
-                    #freeze_frame = cv.bitwise_and(freeze_frame, freeze_frame, mask=output_mask)
-
-
                     # Save the image to the queue
                     q.put( {"number":frame_number,"exposure":my_exposure, "image":freeze_frame} )
-                    print("Image put onto queue, length=",q.qsize())
-
-                    # Save frame to disk.
-                    # PNG output, with NO compression - which is quicker (less CPU time) on Rasp PI
-                    # at expense of disk I/O
-                    # PNG is always lossless
-                    #start_time = time.perf_counter()
-                    #if cv.imwrite(filename, freeze_frame) == False:
-                        # if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_PNG_COMPRESSION, 1])==False:
-                        # if cv.imwrite(filename, freeze_frame, [cv.IMWRITE_JPEG_QUALITY, 100])==False:
-                    #    raise IOError("Failed to save image")
-                    #print("Save image took {0:.2f} seconds for frame {1}".format(
-                    #    time.perf_counter() - start_time, frame_number))
-
-                    # cv.imshow("output",output_image)
-                    # cv.waitKey(50)
-
-                # Change EXPOSURE
-                # if True==True:
-                #    for my_exposure in CAMERA_EXPOSURE[1:]:
-                #        # Take a fresh photo now the motion has stopped, ensure the centre is calculated...
-                #        for n in range(0, 10):
-                #            #Delay to let the film/camera settle before a new image
-                #            cv.waitKey(50)
-                #            freeze_frame, _, _ = ProcessImage(centre_box, video_width, video_height, False, my_exposure, VERTICAL_OUTPUT_OFFSET)
-                #            if centre != None:
-                #                break
-                #        output_image=PrepareImageForOutput(freeze_frame, frame_number, output_video_frame_size, sproket_y[1], VERTICAL_OUTPUT_OFFSET, my_exposure)
-                #        filename = os.path.join(path+"{0}".format(my_exposure), "frame_{:08d}.png".format(frame_number))
-                #        if cv.imwrite(filename, output_image, [cv.IMWRITE_PNG_COMPRESSION, 2])==False:
-                #            raise IOError("Failed to save image")
+                    print("Image put onto queue, q length=",q.qsize())
 
                 # Move frame number on
                 frame_number += 1
                 # Indicate we want to add a frame to the spool
                 frames_to_add_to_spool += 1
-
-                # Determine the average gap between captured frames
-                #steps = []
-                # for n in range(0, len(last_y_list)-1, 2):
-                #    steps.append(last_y_list[n+1]-last_y_list[n])
-                # if len(steps) > 0:
-                #    total_steps = 0
-                #    for n in steps:
-                #        total_steps += n
-                #    average_spacing = round(total_steps/len(steps), 1)
-                #    previous_frame_y = last_y_list[len(last_y_list)-1]
-                #    last_frame_spacing = round(
-                #        marlin_y-previous_frame_y, 2)
-                #    print("Average Marlin steps between frames",
-                #          average_spacing, ", last frame=", last_frame_spacing)
-                #    if last_frame_spacing > (average_spacing*1.5):
-                #        print("Likely dropped frame")
-                #        # Clear average out after a dropped frame :-(
-                #        last_y_list = []
-                # Now add on our new reading
-                # last_y_list.append(marlin_y)
-                # if len(last_y_list) > 20:
-                #    # Keep list at 20 items, remove first
-                #    last_y_list.pop(0)
 
                 # Now move film forward past the sproket hole so we don't take the same frame twice
                 # do this at a faster speed, to improve captured frames per second
