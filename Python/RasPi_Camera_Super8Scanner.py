@@ -36,7 +36,7 @@ import subprocess
 # Globals (naughty, naughty)
 camera = None
 shutter_speed = 1000
-iso = 100
+iso = 50
 
 
 def pointInRect(point, rect):
@@ -197,7 +197,7 @@ def ProcessImage(large_image, centre_box: list, draw_rects=True, exposure_level=
             box = cv.boxPoints(rect)
             # Convert dimensions to ints
             box = np.int0(box)
-            colour = (0, 0, 255)
+            colour = (200, 0, 200)
 
             # Mark centre of sproket with a circle
             if draw_rects:
@@ -213,8 +213,7 @@ def ProcessImage(large_image, centre_box: list, draw_rects=True, exposure_level=
             print("Area is ", area)
             # pass
     else:
-        cv.putText(preview_image, "No contour", (0, 50),
-                   cv.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 2, cv.LINE_AA)
+        cv.putText(preview_image, "No contour", (0, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv.LINE_AA)
 
     #print(time.perf_counter() - start_time)
     return preview_image, None, None
@@ -338,26 +337,22 @@ def AutoWB(c: PiCamera, newgain=None):
         c.awb_gains = newgain
 
     print("awb_mode", c.awb_mode, "awb_gains", c.awb_gains)
-
+    return c.awb_gains
 
 def SetExposure(c: PiCamera, shutter_speed: int = 1000, iso: int = 100):
-    #print("BEFORE: iso",c.iso,"exposure_mode",c.exposure_mode,"exposure_speed",c.exposure_speed,"shutter_speed",c.shutter_speed,"awb_mode",c.awb_mode,"awb_gains",c.awb_gains)
-
-    # Fix camera gain and white balance
+    print("BEFORE: analog_gain", c.analog_gain, "digital_gain", c.digital_gain)
+    1# Fix camera gain and white balance
     if c.iso != iso:
         c.iso = iso
         # Let camera settle
-        time.sleep(0.5)
-    # Now fix the values
-    #c.shutter_speed = c.exposure_speed
+        time.sleep(2)
 
-    print("analog_gain", c.analog_gain, "digital_gain", c.digital_gain)
     #c.exposure_mode = 'auto'
+    #time.sleep(0.5)
     c.shutter_speed = shutter_speed
     c.exposure_mode = 'off'
     print("AFTER: iso", c.iso, "exposure_mode", c.exposure_mode, "exposure_speed", c.exposure_speed,
-          "shutter_speed", c.shutter_speed, "awb_mode", c.awb_mode, "awb_gains", c.awb_gains)
-
+          "shutter_speed", c.shutter_speed)
 
 def StartupAlignment(marlin: serial.Serial, centre_box):
     global lower_threshold, camera
@@ -372,13 +367,19 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
     res = (640, 480)
     rawCapture = PiRGBArray(camera, size=res)
 
+    camera.iso = iso
+    # Let camera settle
+    time.sleep(2)
+    shutter_speed=camera.exposure_speed
+
     # Set to defaults
-    AutoWB(camera, (Fraction(23, 8), Fraction(471, 256)))
     SetExposure(camera, shutter_speed, iso)
+    awb_gain=AutoWB(camera)
+    #AutoWB(camera, (Fraction(23, 8), Fraction(471, 256)))
+
+    threshold_enable=False
 
     for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
-        # while True:
-        # SetExposure(videoCaptureObject)
 
         # Capture a small 640x480 image for the preview
         image = frame.array
@@ -390,8 +391,12 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
         image = cv.flip(image, 0)
 
         # large_image,highres_image_height,highres_image_width=TakeHighResPicture()
-        preview_image, centre, _ = ProcessImage(
-            image, centre_box, True, lower_threshold=lower_threshold)
+        preview_image, centre, _ = ProcessImage(image, centre_box, True, lower_threshold=lower_threshold)
+
+        # Threshold the entire colour image, this helps find if we have a back light issue
+        # and detects hotspots/dark spots
+        if threshold_enable:
+            _, preview_image = cv.threshold(cv.cvtColor(preview_image, cv.COLOR_BGR2GRAY), lower_threshold, 255, cv.THRESH_BINARY)
 
         if centre == None:
             cv.putText(preview_image, "Sproket hole not detected",
@@ -401,21 +406,20 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
                        (10, 20), cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 0), 1, cv.LINE_AA)
 
         # Help text..
-        cv.putText(preview_image, "press f to nudge forward,",
-                   (10, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
-        cv.putText(preview_image, "b for back, j to jump forward quickly,",
-                   (10, 85), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+        cv.putText(preview_image, "press f to nudge forward, b for back",
+                   (8, 60), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+        cv.putText(preview_image, "j to jump forward quickly, t toggle threshold",
+                   (8, 90), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
         cv.putText(preview_image, "[ and ] alter threshold, value={0}".format(lower_threshold),
-                   (10, 105), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
-        cv.putText(preview_image, ", and . alter shutter_speed, value={0}, iso={1}".format(
-            shutter_speed, iso), (10, 260), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+                   (8, 115), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+        cv.putText(preview_image, ", and . alter shutter_speed, value={0}, iso={1}".format(shutter_speed, iso), (8, 300), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
         cv.putText(preview_image, "r to rewind spool (1 revolution), ESC to quit",
-                   (10, 280), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
+                   (8, 330), cv.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 1, cv.LINE_AA)
 
         image_height, image_width = preview_image.shape[:2]
         cv.imshow('RawVideo', preview_image)
 
-        # Check keyboard, wait 0.5 second whilst we do that, then refresh the image capture
+        # Check keyboard, wait whilst we do that, then refresh the image capture
         k = cv.waitKey(50) & 0xFF
 
         if k == ord(' '):    # SPACE key to continue
@@ -428,6 +432,9 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
         if k == ord(']'):
             lower_threshold += 2
 
+        if k == ord('t'):
+            threshold_enable=not(threshold_enable)
+
         if k == ord('s'):
             shutter_speed, iso = AutoShutterSpeed(camera)
 
@@ -437,14 +444,14 @@ def StartupAlignment(marlin: serial.Serial, centre_box):
 
         if k == ord(','):
             shutter_speed -= 50
-            if shutter_speed < 0:
-                shutter_speed = 0
+            if shutter_speed < 50:
+                shutter_speed = 50
             SetExposure(camera, shutter_speed, iso)
 
         if k == ord('.'):
             shutter_speed += 50
-            if shutter_speed > 180000:
-                shutter_speed = 180000
+            if shutter_speed > 300000:
+                shutter_speed = 300000
             SetExposure(camera, shutter_speed, iso)
 
         if k == 27:
@@ -583,7 +590,7 @@ def main():
     # must be in the centre of the screen without cropping each frame of Super8
     # dimensions are based on the preview window 556x366
     # X,Y, W, H
-    centre_box = [50, 0, 32, 60]
+    centre_box = [30, 0, 32, 60]
     # Ensure centre_box is in the centre of the video resolution/image size
     # we use the PREVIEW sized window for this
     centre_box[1] = int(image_height/2-centre_box[3]/2)
@@ -623,8 +630,9 @@ def main():
         # while True:
         highres_width, highres_height = configureHighResCamera()
 
-        AutoWB(camera)
         SetExposure(camera, shutter_speed, iso)
+        #Set AWB after exposure
+        AutoWB(camera)
 
         rawCapture = PiRGBArray(camera, size=(highres_width, highres_height))
 
@@ -713,7 +721,7 @@ def main():
                 if k == ord('g'):
                     # Press g to force capture of a picture, you must ensure the sproket is
                     # manually aligned first
-                    manual_control = False
+                    #manual_control = False
                     manual_grab = True
 
             # Centre returns the middle of the sproket hole (if visible)
