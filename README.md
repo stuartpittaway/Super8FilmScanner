@@ -26,34 +26,18 @@ See the video on how to use/build this device!
 
 ## Step 1 - Capture full frame masters
 
-On a Raspberry Pi, use the python code in `RasPi_Camera_Super8Scanner.py` to capture all the individual frames to individual BMP files.
+On a Raspberry Pi (4 is possible), use the python code in `RasPi_Camera_Super8Scanner.py` to capture all the individual frames to individual PNG files.
 
-This will generate a large number of files (3000+) of significant file size 20+MByte each.  Camera captures approximately 7.5megapixel full images.
+This will generate a large number of files (3000+) of significant file size 8+MByte each.  Camera captures approximately 7.5megapixel full images.
 
-Scanning is slow, running around 0.35 frames per second, so a 3 minute reel takes hours.  
+Scanning is slow, running around 0.4 - 0.5 frames per second, so a 3 minute reel takes 3+ hours.  
 
-Speed was not a critical issue when designing this solution, however the longest delay is capturing the image from the Raspberry Pi camera and then writing the image to disk.
+Speed was not a critical issue when designing this solution, however the longest delay is capturing the image from the Raspberry Pi camera.
 
 The images captured would look like this (only higher resolution).  Notice you can see the sproket hole and the black border on the right of the image.
 ![Full frame sample image](Sample_Images/Full_Frame_Sample.png)
 
-## Step 2 - Convert the BMP files to PNG for archiving (Optional)
-
-Not strictly necessary, but using the code in `Compress_Folder_Of_PNGs.py` 
-
-The code copies the BMP files from the Raspberry PI (over a network SMB share) to a desktop machine and saves them to a local disk as PNG images.
-
-This preserves the quality of the image, but a quarter of the disk space is used.
-
-This is a separate step, as the Raspberry Pi scanning is significantly slower if it creates PNG files on the fly.
-
-You will have to configure the Raspberry Pi to expose a network share for you to access from a desktop PC.
-
-You can run this process whilst scanning is operating, to avoid the memory card on the Pi filling up.
-
-The files are put into a folder named "Capture"
-
-## Step 3 - Alignment
+## Step 2 - Alignment
 
 Step one captured the full frame of the film, this process takes those master images and accurately crops them to vertically and horizontally align them based on the sproket hole.
 
@@ -61,12 +45,12 @@ OpenCV is used to detect the hole and align/crop the image.
 
 The code is in `ImageRegistrationCropping.py` its likely you will need to tweak the code to cater for the particular file size/resolution you are using and the camera configuration.
 
-Look for the variable `frame_dims` to control the output image dimensions
+Look for the variable `frame_dims` to control the output image dimensions.  Its likely you will also need to change the folder names.
 
 The files are put into a folder named "Aligned".  Example image.
 ![Aligned frame sample image](Sample_Images/Aligned_Sample.png)
 
-## Step 4 - Denoise (optional)
+## Step 3 - Denoise (optional)
 
 A post process called de-noise filtering can be used to improve image quality.  This code can be found in `Denoise.py`
 
@@ -81,7 +65,7 @@ For a description of the paramters, check out the [OpenCV documentation](https:/
 The files are put into a folder named "Denoise".  Example image.
 ![Frame after denoise filtering](Sample_Images/After_DeNoise.png)
 
-## Step 5 - Create Video
+## Step 4 - Create Video
 
 ### FFMPEG
 You can use the open source FFMPEG tool to convert a series of pictures into a video, using a command similar to this:
