@@ -137,7 +137,7 @@ def scanImageForAverageCalculations(image):
     #Original image is 3556x2381
     y1=int(h*0.2)
     y2=int(h*0.8)
-    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[y1:y2,0:int(w*0.20)],lower_threshold=175)
+    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[y1:y2,0:int(w*0.20)],lower_threshold=200)
 
     cv.waitKey(15)
 
@@ -260,7 +260,7 @@ def processImage(original_image, average_width, average_height, average_area):
         # Frame dimensions - this will need to be altered on every scan
         # perhaps enhance the GUI to use mouse coordinates?
         # Negative offset X,Y and then W,H
-        frame_dims=(-64,-630, 2650, 1790)
+        frame_dims=(-64,-630, 2630, 1775)
 
         # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
         # calculate everything based on the ratio of the sproket holes
@@ -438,11 +438,11 @@ files=Filelist(input_path,"png")
 
 try:
     average_sample_count=21
-    average_width=390
-    average_height=502
-    average_area=189541
-    #samples= 21 w= 388 h= 504 area= 188039
-    #samples= 21 w= 390 h= 502 area= 189541
+    average_width=385
+    average_height=500
+    average_area=185311
+    #samples= 21 w= 385 h= 500 area= 185311
+    
     # Skip this for now, we have already run it!
     #average_sample_count,average_width,average_height,average_area=scanImages(files[:300])
 
@@ -477,8 +477,8 @@ try:
                 #output_h=1558
                 #output_w=int(output_h*(1920/1080))
 
-                output_h=1080
                 output_w=1920
+                output_h=1080
 
                 #Scale new_image to keep correct aspect ratio
                 scale = output_w/w
