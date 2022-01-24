@@ -40,7 +40,7 @@ camera = None
 shutter_speed = 1000
 iso = 50
 
-NUM_THREADS = 2
+NUM_THREADS = 3
 
 q = queue.Queue(maxsize=10)
 
@@ -638,7 +638,7 @@ def main():
         # Position on film reel (in marlin Y units)
         marlin_y = 0.0
         # Default space (in marlin Y units) between frames on the reel
-        frame_spacing = 20.5
+        FRAME_SPACING = 16.425
         # List of positions (marlin y) where last frames were captured/found
         last_y_list = []
 
@@ -876,7 +876,7 @@ def main():
 
                 # Now move film forward past the sproket hole so we don't take the same frame twice
                 # do this at a faster speed, to improve captured frames per second
-                marlin_y += frame_spacing
+                marlin_y += FRAME_SPACING
                 MoveFilm(marlin, marlin_y, STANDARD_FEED_RATE)
                 micro_adjustment_steps = 0
 
