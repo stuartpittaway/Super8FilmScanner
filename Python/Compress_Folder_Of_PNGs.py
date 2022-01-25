@@ -1,3 +1,4 @@
+# Compress_Folder_Of_PNGs.py
 # Simple script to copy images from one folder to another
 # converting/compressing PNG along the way
 # to aid in reducing disk space and reducing CPU load on Rasp PI
@@ -14,7 +15,7 @@ output_path = os.path.join(os.getcwd(), "Capture")
 if not os.path.exists(output_path):
     raise FileNotFoundError("Missing output folder")
 
-input_path = "\\\\192.168.0.60\\pi\\Super8FilmScanner\\Python\\Capture-8.0"
+input_path = "\\\\192.168.0.66\\pi\\Super8FilmScanner\\Python\\Capture-8.0"
 if not os.path.exists(input_path):
     raise FileNotFoundError("Missing input folder")
 
@@ -25,7 +26,7 @@ while True:
         print("Nothing to do, so quit...")
         quit()
 
-    for filename in files:  #[2:]:
+    for filename in files[2:]:
         img = cv.imread(filename,cv.IMREAD_UNCHANGED)
         if img is None:
             print("Error opening file",filename)
