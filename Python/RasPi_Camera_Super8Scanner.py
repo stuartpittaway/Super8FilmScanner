@@ -133,7 +133,7 @@ def GetPreviewImage(large_image):
 
 def ProcessImage(large_image, centre_box: list, draw_rects=True, exposure_level=-8.0, lower_threshold=150):
     # Contour of detected sproket needs to be this large to be classed as valid (area)
-    MIN_AREA_OF_SPROKET = 2600
+    MIN_AREA_OF_SPROKET = 3000
     MAX_AREA_OF_SPROKET = int(MIN_AREA_OF_SPROKET * 1.30)
 
     preview_image, image_height, image_width = GetPreviewImage(large_image)
@@ -531,10 +531,17 @@ def configureHighResCamera():
         # 3008x2256 = 6,786,048
         # 3104x2336 = 7,250,944
         res = (3104, 2336)
+        #Mode 2
+        res = (2048, 1520)
         camera = PiCamera(resolution=res, framerate=30)
+        #Mode0 is default, Mode 2 uses binning
+        #Mode 2 uses 2028x1520 (half resolution and 2x2binning (softer image))
+        camera.sensor_mode=2
         camera.exposure_mode = 'auto'
         camera.awb_mode = 'auto'
         camera.meter_mode = 'backlit'
+        #Down the contrast a little (default 0)
+        camera.contrast = -10
 
     return camera.resolution[0], camera.resolution[1]
 
@@ -547,9 +554,15 @@ def configureLowResCamera():
 
     res = (640, 480)
     camera = PiCamera(resolution=res, framerate=30)
+    #Mode0 is default, Mode 2 uses binning
+    camera.sensor_mode=0
+
     camera.exposure_mode = 'auto'
     camera.awb_mode = 'auto'
     camera.meter_mode = 'backlit'
+
+    #Down the contrast a little (default 0)
+    camera.contrast = -10
 
     return camera.resolution[0], camera.resolution[1]
 
@@ -585,7 +598,7 @@ def main():
     FILM_THICKNESS_MM = 0.150
     INNER_DIAMETER_OF_TAKE_UP_SPOOL_MM = 32.0
 
-    FRAMES_TO_WAIT_UNTIL_SPOOLING = 6
+    FRAMES_TO_WAIT_UNTIL_SPOOLING = 8
 
     # One or several exposures to take images with (for USB camera, only 1 really works)
     CAMERA_EXPOSURE = [-8.0]
@@ -617,7 +630,7 @@ def main():
     # must be in the centre of the screen without cropping each frame of Super8
     # dimensions are based on the preview window 556x366
     # X,Y, W, H
-    centre_box = [30, 0, 32, 60]
+    centre_box = [50, 0, 40, 64]
     # Ensure centre_box is in the centre of the video resolution/image size
     # we use the PREVIEW sized window for this
     centre_box[1] = int(image_height/2-centre_box[3]/2)
@@ -638,7 +651,7 @@ def main():
         # Position on film reel (in marlin Y units)
         marlin_y = 0.0
         # Default space (in marlin Y units) between frames on the reel
-        FRAME_SPACING = 16.425
+        FRAME_SPACING = 16.42
         # List of positions (marlin y) where last frames were captured/found
         last_y_list = []
 
@@ -861,7 +874,7 @@ def main():
                     highres_image_height, highres_image_width = freeze_frame.shape[:2]
 
                     # Generate thumbnail of the picture and show it
-                    thumbnail = cv.resize(freeze_frame, (0, 0), fx=0.30, fy=0.30)
+                    thumbnail = cv.resize(freeze_frame, (0, 0), fx=0.50, fy=0.50)
                     thumnail_height, thumnail_width = thumbnail.shape[:2]
                     cv.imshow("Exposure", thumbnail)
 
