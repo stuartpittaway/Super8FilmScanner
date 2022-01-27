@@ -35,11 +35,11 @@ def OutputFolder() -> str:
 
     return path
 
-def ImageFolder() -> str:
-    # Create folders for the different EV exposure levels
-    
-    # Image Output path - create if needed
+def ImageFolder() -> str:  
+    # Image Input path - create if needed
     path = os.path.join(os.getcwd(), "Capture")
+
+    path = "\\\\192.168.0.66\\pi\\Super8FilmScanner\\Python\\Capture-8.0"    
 
     if not os.path.exists(path):
         raise FileNotFoundError(path)
@@ -153,7 +153,7 @@ def scanImageForAverageCalculations(image):
     #Original image is 3556x2381
     y1=int(h*0.2)
     y2=int(h*0.8)
-    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[y1:y2,0:int(w*0.20)],lower_threshold=165)
+    top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[y1:y2,0:int(w*0.20)],lower_threshold=205)
 
     cv.waitKey(15)
 
@@ -276,7 +276,8 @@ def processImage(original_image, average_width, average_height, average_area):
         # Frame dimensions - this will need to be altered on every scan
         # perhaps enhance the GUI to use mouse coordinates?
         # Negative offset X,Y and then W,H
-        frame_dims=(-55,-650, 2600, 1765)
+        # W and H even!
+        frame_dims=(-50,-450, 1786, 1200)
 
         # right hand corner of sproket hole seems to be always best aligned (manual observation) so use that as datum for the whole frame capture
         # calculate everything based on the ratio of the sproket holes
@@ -454,12 +455,9 @@ files=Filelist(input_path,"png")
 
 try:
     average_sample_count=21
-    average_width=387
-    average_height=497
-    average_area=183567
-    #samples= 21 w= 387 h= 499 area= 188605
-    #samples= 21 w= 382 h= 494 area= 182578
-    #samples= 11 w= 387 h= 497 area= 183567
+    average_width=250
+    average_height=328
+    average_area=80408
 
     # Skip this for now, we have already run it!
     #average_sample_count,average_width,average_height,average_area=scanImages(files[:300])
@@ -467,7 +465,7 @@ try:
     print("samples=",average_sample_count,"w=",average_width,"h=", average_height,"area=", average_area)
     
     previous_output_image_filename=None 
-    overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
+    #overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
 
     for i in range(NUM_THREADS):
         worker = Thread(target=ServiceImageWriteQueue, args=(q,))
