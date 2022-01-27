@@ -14,13 +14,15 @@ Items needed for this project:
 * [Pi Advanced 12megapixel Camera](https://www.raspberrypi.com/products/raspberry-pi-high-quality-camera/)
 * [Microscope lens for the Raspberry Pi High Quality Camera - 0.12-1.8x](https://shop.pimoroni.com/products/microscope-lens-0-12-1-8x)
 * 3D printed frame (files in this repository)
-* Two small stepper motors
+* Two small depth stepper motors (NEMA 17 style)
 * RAMPS style motherboard for controlling the stepper motors and running [MARLIN](https://github.com/MarlinFirmware/Marlin)
 * MR16 style LED light bulb (5 Watt)
 
 # YouTube video
 
-See the video on how to use/build this device!
+See the video on how to use and build this device.
+
+https://youtu.be/DWqnX4kHpYg
 
 # Scanning Process
 
