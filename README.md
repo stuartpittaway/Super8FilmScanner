@@ -30,9 +30,9 @@ https://youtu.be/DWqnX4kHpYg
 
 On a Raspberry Pi (4 is possible), use the python code in `RasPi_Camera_Super8Scanner.py` to capture all the individual frames to individual PNG files.
 
-This will generate a large number of files (3000+) of significant file size 8+MByte each.  Camera captures approximately 7.5megapixel full images.
+This will generate a large number of files (3000+) of significant file size 2+MByte each.  Camera captures approximately 3megapixel images.
 
-Scanning is slow, running around 0.4 - 0.5 frames per second, so a 3 minute reel takes 3+ hours.  
+Scanning is slow, running around 1.25 frames per second, so a 3 minute reel takes 1 hour.  
 
 Speed was not a critical issue when designing this solution, however the longest delay is capturing the image from the Raspberry Pi camera.
 
