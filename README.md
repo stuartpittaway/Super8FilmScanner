@@ -22,7 +22,7 @@ Items needed for this project:
 
 See the video on how to use and build this device.
 
-https://youtu.be/DWqnX4kHpYg
+https://youtu.be/rd1Xu6e6nrw
 
 # Scanning Process
 
