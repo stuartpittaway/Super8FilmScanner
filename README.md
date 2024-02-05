@@ -66,7 +66,7 @@ Use SSH to connect to <username>@scanner.local, then install VNC server to contr
 ## Step 5 - Install dependencies
 To install OpenCV, run ´sudo apt-get update´ , then ´sudo apt-get install build-essential cmake pkg-config libjpeg-dev libtiff5-dev libjasper-dev libpng-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev libxvidcore-dev libx264-dev libfontconfig1-dev libcairo2-dev libgdk-pixbuf2.0-dev libpango1.0-dev libgtk2.0-dev libgtk-3-dev libatlas-base-dev gfortran libhdf5-dev libhdf5-serial-dev libhdf5-103 python3-pyqt5 python3-dev -y´
 
-you might also need to run ´pip install opencv-python==4.5.3.56´.
+you might also need to run ´pip install opencv-python==4.5.3.56´ .
 
 # Scanning Process
 
