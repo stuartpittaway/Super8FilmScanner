@@ -50,6 +50,8 @@ Plug in the stepper drivers into the mainboards Y and Z axis, then plug in the s
 
 Slot the Raspberry Pi HQ cameras ribbon cable into the Raspberry Pi and lock it in place. 
 
+Plug the LED wires into the fan header. 
+
 Connect the power supply to the mainboard via the two cables. Make sure the power supply is disconnected.
 
 Connect the mainboard to the Raspberry Pi.
