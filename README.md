@@ -46,7 +46,7 @@ Assemble the scanner according to the 3D files.
 
 ![Mainboard](Sample_Images/mainboard.jpg)
 
-Plug in the stepper drivers into the mainboards Y and Z axis, then plug in the stepper motors in these axis. 
+Plug in the stepper drivers into the mainboards Y and Z axis, then plug in the stepper motors in these axis. You should add the heatsink to the Y axis stepper driver, as it's the one used the most.
 
 Slot the Raspberry Pi HQ cameras ribbon cable into the Raspberry Pi and lock it in place. 
 
