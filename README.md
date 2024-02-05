@@ -44,6 +44,8 @@ Plug in the microSD card into your computer and choose to install the **Legacy 3
 ## Step 3 - Wiring
 Assemble the scanner according to the 3D files.
 
+![Mainboard](Sample_Images/mainboard.jpg)
+
 Plug in the stepper drivers into the mainboards Y and Z axis, then plug in the stepper motors in these axis. 
 
 Slot the Raspberry Pi HQ cameras ribbon cable into the Raspberry Pi and lock it in place. 
