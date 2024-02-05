@@ -44,7 +44,7 @@ Plug in the microSD card into your computer and choose to install the **Legacy 3
 ## Step 3 - Wiring
 Assemble the scanner according to the 3D files.
 
-![Mainboard](Sample_Images/mainboard.jpg)
+![Mainboard](Sample_Images/mainboardcabeling.png)
 
 Plug in the stepper drivers into the mainboards Y and Z axis, then plug in the stepper motors in these axis. You should add the heatsink to the Y axis stepper driver, as it's the one used the most.
 
