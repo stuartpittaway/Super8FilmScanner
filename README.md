@@ -32,7 +32,7 @@ https://youtu.be/rd1Xu6e6nrw
 This is a rough setup description and some steps might be missing, but here is what's necessary:
 
 ## Step 1 - Flash Marlin to the mainboard
-If you ordered the MKS GEN L (V1.0 is enough), flash it with the Marlin Firmware. You can find the latest release [here](https://marlinfw.org/meta/download/).
+Flash your mainboard with the Marlin Firmware. You can find the latest release [here](https://marlinfw.org/meta/download/).
 
 Open Arduino IDE, make the required changes (for your mainboard), connect the Mainboard via USB and upload the firmware to the Mainboard.
 
