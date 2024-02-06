@@ -16,13 +16,57 @@ Items needed for this project:
 * 3D printed frame (files in this repository)
 * Two small depth stepper motors (NEMA 17 style)
 * RAMPS style motherboard for controlling the stepper motors and running [MARLIN](https://github.com/MarlinFirmware/Marlin)
-* MR16 style LED light bulb (5 Watt)
+* Two stepper drivers (for example A4988)
+* ~5000K "cool white" MR16 style LED light bulb (5 Watt)
+* 240V Power supply (an old Ender3 PSU will do)
+* MicroSD card
 
 # YouTube video
 
 See the video on how to use and build this device.
 
 https://youtu.be/rd1Xu6e6nrw
+
+# Setup
+
+This is a rough setup description and some steps might be missing, but here is what's necessary:
+
+## Step 1 - Flash Marlin to the mainboard
+Flash your mainboard with the Marlin Firmware. You can find the latest release [here](https://marlinfw.org/meta/download/).
+
+Open Arduino IDE, make the required changes (for your mainboard), connect the Mainboard via USB and upload the firmware to the Mainboard.
+
+## Step 2 - Install RaspOS on the Raspberry Pi
+Install the Raspberry Pi Imager, which you can find [here](https://www.raspberrypi.com/software/).
+
+Plug in the microSD card into your computer and choose to install the **Legacy 32-bit OS** in the imager software. Use CTRL+SHIFT+X to open the advanced settings.  Choose a hostname, for example "scanner". Then add a username and password. Activate SSH under "services" and add your Wifi settings.
+
+## Step 3 - Wiring
+Assemble the scanner according to the 3D files.
+
+![Mainboard](Sample_Images/mainboardcabeling.png)
+
+Plug in the stepper drivers into the mainboards Y and Z axis, then plug in the stepper motors in these axis. You should add the heatsink to the Y axis stepper driver, as it's the one used the most.
+
+Slot the Raspberry Pi HQ cameras ribbon cable into the Raspberry Pi and lock it in place. 
+
+Plug the LED wires into the fan header. 
+
+Connect the power supply to the mainboard via the two cables. Make sure the power supply is disconnected.
+
+Connect the mainboard to the Raspberry Pi.
+
+## Step 4 - Connecting to the Raspberry Pi
+If you don't plan to use the scanner with dedicated monitor, keyboard and mouse, you have to connect to it via Terminal and VNC. 
+
+Turn on the Raspberry Pi and the PSU. 
+
+Use SSH to connect to <username>@scanner.local, then install VNC server to control your scanner in the future. If your screen stays black after connecting, run "vncserver-virtual" to add a virtual display. 
+
+## Step 5 - Install dependencies
+To install OpenCV, run `sudo apt-get update` , then `sudo apt-get install build-essential cmake pkg-config libjpeg-dev libtiff5-dev libjasper-dev libpng-dev libavcodec-dev libavformat-dev libswscale-dev libv4l-dev libxvidcore-dev libx264-dev libfontconfig1-dev libcairo2-dev libgdk-pixbuf2.0-dev libpango1.0-dev libgtk2.0-dev libgtk-3-dev libatlas-base-dev gfortran libhdf5-dev libhdf5-serial-dev libhdf5-103 python3-pyqt5 python3-dev -y`
+
+you might also need to run `pip install opencv-python==4.5.3.56` .
 
 # Scanning Process
 
