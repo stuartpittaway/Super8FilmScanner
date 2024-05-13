@@ -154,14 +154,13 @@ def cropOriginalImage(image):
     #y2=y1+2000
     #return image[y1:y2,150:2900].copy()
 
-def scanImageForAverageCalculations(image):
+def scanImageForAverageCalculations(image, max_required_contours=10):
     # Do inital crop of the input image
     # this assumes hardcoded image sizes and will need tweaks depending on input resolution
     image=cropOriginalImage(image)
     h, w =image.shape[:2]
 
     #Take a vertical strip where the sproket should be (left hand side)
-    #Original image is 3556x2381
     y1=int(h*0.2)
     y2=int(h*0.8)
     top_left_of_sproket_hole, bottom_right_of_sproket_hole,width_of_sproket_hole,height_of_sproket_hole, rotation, area, number_of_contours=detectSproket(image[y1:y2,0:int(w*0.20)],lower_threshold=205)
@@ -169,7 +168,7 @@ def scanImageForAverageCalculations(image):
     cv.waitKey(15)
 
     #Only 1 shape detected, and no rotation
-    if number_of_contours<10 and (rotation==0.0 or rotation==90.0 or (rotation>0 and rotation<1)):
+    if number_of_contours<max_required_contours and (rotation==0.0 or rotation==90.0 or (rotation>0 and rotation<1)):
         top_left_of_sproket_hole=(top_left_of_sproket_hole[0],y1+top_left_of_sproket_hole[1])
         bottom_right_of_sproket_hole=(bottom_right_of_sproket_hole[0],y1+bottom_right_of_sproket_hole[1])
         cv.rectangle(image, top_left_of_sproket_hole, bottom_right_of_sproket_hole, (0,0,255), 2)
@@ -178,7 +177,7 @@ def scanImageForAverageCalculations(image):
 
     return None, None,None,None
 
-def scanImages(files:List, maximum_number_of_samples:int=32):
+def scanImages(files:List, attempts=0, max_attempts=7):
     # Scan a selection of images looking for "perfect" frames to determine correct
     # size of sproket holes.
     # Asks for human confirmation during the process
@@ -187,21 +186,23 @@ def scanImages(files:List, maximum_number_of_samples:int=32):
     average_width=0
     average_area=0
 
-    # Scan first 100 frames/images to determine what "good" looks like
+    # Thresholds for the number of contours found on scanImageForAverageCalculations
+    contour_thresholds = [10, 15, 20, 30, 50, 75, 100]
+
+    # Scan frames/images to determine what "good" looks like
     for filename in files:
         # Quit if we have enough samples
-        if average_sample_count>maximum_number_of_samples:
+        if average_sample_count>20:
             break
 
         img = cv.imread(filename,cv.IMREAD_UNCHANGED)
         if img is None:
             print("Error reading",filename)
         else:
-            thumbnail, width_of_sproket_hole,height_of_sproket_hole, area=scanImageForAverageCalculations(img)
+            thumbnail, width_of_sproket_hole,height_of_sproket_hole, area=scanImageForAverageCalculations(img, contour_thresholds[attempts])
 
             if width_of_sproket_hole!=None:
                 #Show thumbnail
-
                 cv.putText(thumbnail, "Accept frame? y or n", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (250, 0, 250), 2, cv.LINE_AA)
                 cv.putText(thumbnail, "w={0} h={1} area={2}".format(width_of_sproket_hole, height_of_sproket_hole, area), (0, 150), cv.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 250), 2, cv.LINE_AA)
                 cv.putText(thumbnail, "valid samples={0}".format(average_sample_count), (0, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 250), 2, cv.LINE_AA)
@@ -218,16 +219,16 @@ def scanImages(files:List, maximum_number_of_samples:int=32):
                     average_width+=width_of_sproket_hole
                     average_area+=area
 
-                if k == 27:
-                    return_value = False
+                if k == 27 or average_sample_count>20:
                     break
 
-                if (average_sample_count>20):
-                    break
-
-# samples= 16 w= 352 h= 443 area= 151601
-    if (average_sample_count<10):
-        raise Exception("Unable to detect suitable sample size")
+    print("samples=",average_sample_count)
+    if average_sample_count < 5:
+        if attempts < max_attempts:
+            print(f"Not enough samples, trying again with higher contour threshold {contour_thresholds[attempts]}")
+            return scanImages(files, attempts+1, max_attempts)
+        else:
+            raise Exception("Unable to detect suitable sample size")
 
     # Determine averages
     average_height=int(average_height/average_sample_count)
