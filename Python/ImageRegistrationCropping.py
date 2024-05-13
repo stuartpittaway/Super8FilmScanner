@@ -53,11 +53,11 @@ def ImageFolder(path: str) -> str:
 
     return path
 
-def Filelist(path: str, extensions: list) -> list:
+def Filelist(path: str, extensions: list, name:str) -> list:
     """ Generate a list of files from given path with specified extensions, sorted by filename. """
     files = []
     for ext in extensions:
-        files.extend(glob.glob(os.path.join(path, f"frame_????????.{ext}")))
+        files.extend(glob.glob(os.path.join(path, f"{name}.{ext}")))
     files = sorted(files)  # Sort the files after collecting all extensions
     return files
 
@@ -536,6 +536,7 @@ try:
     
     if config is None:
         config = {
+            "image_name": "frame_????????",
             "input_path": "Capture",
             "output_path": "Aligned",
             "extensions": ['png', 'jpg', 'jpeg']
@@ -547,7 +548,7 @@ try:
     print("Input path:", input_path)
     print("Output path:", output_path)
 
-    files=Filelist(input_path, config['extensions'])
+    files=Filelist(input_path, config['extensions'], config['image_name'])
     print("Number of files found:", len(files))
 
     if config.get('average_sample_count') is None:
