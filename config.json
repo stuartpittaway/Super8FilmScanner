@@ -1,15 +1,21 @@
 {
     "input_path": "Capture",
     "output_path": "Aligned",
-    "average_sample_count": 5,
-    "average_width": 511,
-    "average_height": 654,
-    "average_area": 293959,
+    "average_sample_count": 11,
+    "average_width": 512,
+    "average_height": 649,
+    "average_area": 306419,
     "extensions": [
         "jpg"
     ],
     "resize_image": [
         3840,
         2160
+    ],
+    "frame_dims": [
+        0,
+        -904,
+        3192,
+        2305
     ]
 }
