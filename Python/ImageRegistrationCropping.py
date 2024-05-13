@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING, List
+from threading import Thread
 
 import cv2 as cv
 import numpy as np
@@ -7,13 +8,20 @@ import os
 import glob
 import shutil
 import traceback
-
+import json
 import queue
-from threading import Thread
 
 NUM_THREADS = 2
 
 q = queue.Queue(maxsize=10)
+
+min_x=999999
+max_x=0
+min_y=999999
+max_y=0
+lower_t=225
+previous_frame_top_left_of_sproket_hole=None
+previous_frame_bottom_right_of_sproket_hole=None
 
 def ServiceImageWriteQueue(q):
     while True:
@@ -24,30 +32,33 @@ def ServiceImageWriteQueue(q):
 
         q.task_done()
 
-def OutputFolder() -> str:
+def OutputFolder(path: str) -> str:
     # Create folders for the different EV exposure levels
     
     # Image Output path - create if needed
-    path = os.path.join(os.getcwd(), "Aligned")
+    path = os.path.join(os.getcwd(), path)
 
     if not os.path.exists(path):
         os.mkdir(path)
 
     return path
 
-def ImageFolder() -> str:  
+def ImageFolder(path: str) -> str:  
     # Image Input path - create if needed
-    path = os.path.join(os.getcwd(), "Capture")
-
-    path = "\\\\192.168.0.66\\pi\\Super8FilmScanner\\Python\\Capture-8.0"    
+    path = os.path.join(os.getcwd(), path)
 
     if not os.path.exists(path):
         raise FileNotFoundError(path)
 
     return path
 
-def Filelist(path: str, ext: str) -> int:
-    return sorted(glob.glob(os.path.join(path, "frame_????????."+ext)), reverse=False)
+def Filelist(path: str, extensions: list) -> list:
+    """ Generate a list of files from given path with specified extensions, sorted by filename. """
+    files = []
+    for ext in extensions:
+        files.extend(glob.glob(os.path.join(path, f"frame_????????.{ext}")))
+    files = sorted(files)  # Sort the files after collecting all extensions
+    return files
 
 # For Details Reference Link:
 # http://stackoverflow.com/questions/46036477/drawing-fancy-rectangle-around-face
@@ -74,7 +85,6 @@ def draw_border(img, pt1, pt2, color, thickness, r, d):
     cv.line(img, (x2 - r, y2), (x2 - r - d, y2), color, thickness)
     cv.line(img, (x2, y2 - r), (x2, y2 - r - d), color, thickness)
     cv.ellipse(img, (x2 - r, y2 - r), (r, r), 0, 0, 90, color, thickness)
-
 
 def detectSproket(sproket_image, lower_threshold:int=210):
     # Convert to gray and blur
@@ -190,7 +200,7 @@ def scanImages(files:List, maximum_number_of_samples:int=32):
 
             if width_of_sproket_hole!=None:
                 #Show thumbnail
-                
+
                 cv.putText(thumbnail, "Accept frame? y or n", (10, 50), cv.FONT_HERSHEY_SIMPLEX, 1, (250, 0, 250), 2, cv.LINE_AA)
                 cv.putText(thumbnail, "w={0} h={1} area={2}".format(width_of_sproket_hole, height_of_sproket_hole, area), (0, 150), cv.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 250), 2, cv.LINE_AA)
                 cv.putText(thumbnail, "valid samples={0}".format(average_sample_count), (0, 200), cv.FONT_HERSHEY_SIMPLEX, 1, (100, 100, 250), 2, cv.LINE_AA)
@@ -224,14 +234,6 @@ def scanImages(files:List, maximum_number_of_samples:int=32):
     average_area=int(average_area/average_sample_count)
 
     return average_sample_count,average_width,average_height,average_area
-
-min_x=999999
-max_x=0
-min_y=999999
-max_y=0
-lower_t=225
-previous_frame_top_left_of_sproket_hole=None
-previous_frame_bottom_right_of_sproket_hole=None
 
 def processImage(original_image, average_width, average_height, average_area):
     global min_x,max_x,min_y,max_y, lower_t
@@ -444,28 +446,62 @@ def processImage(original_image, average_width, average_height, average_area):
 
             return untouched_image[frame_tl[1]:frame_br[1],frame_tl[0]:frame_br[0]]
 
-    
+def load_config(config_file):
+    """ Load the configuration from a file. """
+    try:
+        with open(config_file, 'r') as file:
+            return json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
 
-input_path=ImageFolder()
-output_path=OutputFolder()
-
-files=Filelist(input_path,"png")
-
-#files=files[469:]
+def save_config(config_file, data):
+    """ Save the configuration to a file. """
+    with open(config_file, 'w') as file:
+        json.dump(data, file, indent=4)    
 
 try:
-    average_sample_count=21
-    average_width=250
-    average_height=328
-    average_area=80408
+    config_file = 'config.json'
+    config = load_config(config_file)
+    
+    if config is None:
+        config = {
+            "input_path": "Capture",
+            "output_path": "Aligned",
+            "extensions": ['png', 'jpg', 'jpeg']
+        }
 
-    # Skip this for now, we have already run it!
-    #average_sample_count,average_width,average_height,average_area=scanImages(files[:300])
+    input_path=ImageFolder(config['input_path'])
+    output_path=OutputFolder(config['output_path'])
 
-    print("samples=",average_sample_count,"w=",average_width,"h=", average_height,"area=", average_area)
+    print("Input path:", input_path)
+    print("Output path:", output_path)
+
+    files=Filelist(input_path, config['extensions'])
+    print("Number of files found:", len(files))
+
+    if config.get('average_sample_count') is None:
+        print("No config found, redoing analysis.")
+        config['average_sample_count'], config['average_width'], config['average_height'], config['average_area'] = scanImages(files[:300])
+        save_config(config_file, config)
+    else:
+        print("Loaded config:", config)
+
+    # Ask user if they want to redo the sprocket analysis
+    redo_analysis = input("Do you want to redo the sprocket analysis? (yes/[no]): ").strip().lower()
+    if redo_analysis == 'yes' or redo_analysis == 'y':
+        config['average_sample_count'], config['average_width'], config['average_height'], config['average_area'] = scanImages(files[:300])
+        save_config(config_file, config)
+        print("Analysis done and config saved.")
+    else:
+        print("Proceeding with existing config.")
+
+    average_sample_count = config['average_sample_count']
+    average_width = config['average_width']
+    average_height = config['average_height']
+    average_area = config['average_area']
+    print("Using these sprocket values: samples=", average_sample_count, "w=", average_width, "h=", average_height, "area=", average_area)
     
     previous_output_image_filename=None 
-    #overlay_frame = cv.imread("overlay_frame.png",cv.IMREAD_UNCHANGED)
 
     for i in range(NUM_THREADS):
         worker = Thread(target=ServiceImageWriteQueue, args=(q,))
@@ -492,14 +528,12 @@ try:
 
 
             # Resize image and put into 16:9 frame?
-            if True==False:
+            if config['resize_image'] and config['resize_image'][0] > 0 and config['resize_image'][1] > 0:
                 #Output a slightly higher resolution - use post editing to resize
                 #this outputs at 16:9 scale
-                #output_h=1558
-                #output_w=int(output_h*(1920/1080))
 
-                output_w=1920
-                output_h=1080
+                output_w=config['resize_image'][0]
+                output_h=config['resize_image'][1]
 
                 #Scale new_image to keep correct aspect ratio
                 scale = output_w/w
@@ -517,17 +551,9 @@ try:
                 new_image = np.zeros((output_h,output_w,3), np.uint8)
                 new_image[0:scale_h,scale_x_offset:scale_x_offset+scale_w]=scaled_image
 
-
-            # Place cropped into bottom right corner
-            #output_image[offset_y:offset_y+h,0:w]=cropped
-
             previous_output_image_filename=new_filename
 
-            # Finally apply the mask over the top of the resized final video frame
-            #new_image = cv.bitwise_and(new_image, new_image, mask=overlay_frame)
-
             q.put( {"filename":new_filename, "image":new_image} )
-
 
             #Show thumbnail at 50% of original
             thumbnail=cv.resize(new_image, (0,0), fx=0.4, fy=0.4)
