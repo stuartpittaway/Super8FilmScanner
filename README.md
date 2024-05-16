@@ -96,6 +96,31 @@ Look for the variable `frame_dims` to control the output image dimensions.  Its 
 The files are put into a folder named "Aligned".  Example image.
 ![Aligned frame sample image](Sample_Images/Aligned_Sample.png)
 
+You can modify the provided `config.json` file to suit your needs. These are the available configurations:
+
+```json
+{
+    "image_name": "frame_????????", // The name of the images to be processed
+    "input_path": "Capture", // The folder where the images are stored
+    "output_path": "Aligned", // The folder where the aligned images will be stored
+    "extensions": ["png", "jpg", "jpeg"], // The extensions of the images to be processed
+    "average_sample_count": 11, // This will be saved automatically if you run a new analysis
+    "average_width": 512, // This will be saved automatically if you run a new analysis
+    "average_height": 649, // This will be saved automatically if you run a new analysis
+    "average_area": 306419, // This will be saved automatically if you run a new analysis
+    "resize_image": [ // if you want to resize the images after alignment
+        3840, // width
+        2160 // height
+    ],
+    "frame_dims": [ // You can get this after adjusting the first frame dimensions
+        0, // x offset
+        -904, // y offset
+        3192, // width
+        2305 // height
+    ]
+}
+```
+
 ## Step 3 - Denoise (optional)
 
 A post process called de-noise filtering can be used to improve image quality.  This code can be found in `Denoise.py`
