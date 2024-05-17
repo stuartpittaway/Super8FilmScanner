@@ -148,3 +148,8 @@ ffmpeg.exe -y -start_number 0 -framerate 18 -i "Aligned\frame_%08d.png" -vcodec 
 Alternatively, use video editing software like [Davinci Resolve](https://www.blackmagicdesign.com/products/davinciresolve/) to import the pictures and generate a video.
 
 This can also be used to colour correct the film, remove noise and grain and generally improve the final video.
+
+## Experimental 8mm film support
+Use `RasPi_Camera_8mmScanner.py` to try the experimental 8mm film support. It uses a different sprocket offset and has changed values for the valid sprocket size. The output files are not labelled the same as Super8 files, as they feature the date to avoid accidentally overwriting files.
+
+For alignment, you can try `8mm_ImageRegistration.py`, though you might need to rename the image files to the following format: "frame_00000.png" and enter your input and output folders (lines 38+49). 
